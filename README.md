@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # FairShift — Decent Work, Safety & Transparency Platform
 > **Prompt Wars 2026 Hackathon | ACM Student Chapter, SRMIST**  
 > **Theme:** UN SDG 8 — Decent Work and Economic Growth  
@@ -186,4 +187,4 @@ Check out our submission and live platform!
 - [x] **Initial Repository Size:** Strictly under 10 MB (clean source code without node_modules/build artifacts)
 - [x] **Zero Exposed Credentials:** No secrets or private keys in source
 - [x] **Deployment Target:** Google Cloud Run compliant Dockerfile and health check
-- [x] **Test Results:** 12 automated unit and integration tests passing
+- [x] **Test Results:** 14 automated unit and integration tests passing
