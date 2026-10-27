@@ -56,6 +56,9 @@ export const EmployerPortal: React.FC<EmployerPortalProps> = ({
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
+  const [safetyFilter, setSafetyFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Modals
   const [inspectReport, setInspectReport] = useState<SafetyReport | null>(null);
   const [resolutionNoteInput, setResolutionNoteInput] = useState('');
@@ -455,6 +458,38 @@ export const EmployerPortal: React.FC<EmployerPortalProps> = ({
                 </p>
               </div>
             </div>
+
+            {/* Filter Pills & Search */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                className="form-input"
+                style={{ width: 220, padding: '6px 12px', minHeight: 36, fontSize: '0.85rem' }}
+                placeholder={t.searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: 4 }}>
+                {['all', 'submitted', 'under_review', 'action_required', 'resolved'].map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setSafetyFilter(st)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      border: safetyFilter === st ? '1.5px solid #0d9488' : '1px solid #cbd5e1',
+                      background: safetyFilter === st ? '#f0fdfa' : '#ffffff',
+                      color: safetyFilter === st ? '#0f766e' : '#475569',
+                      fontWeight: safetyFilter === st ? 700 : 500,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {st === 'all' ? t.all : st.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="table-responsive">
@@ -472,7 +507,17 @@ export const EmployerPortal: React.FC<EmployerPortalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {safetyReports.map((report) => (
+                {safetyReports
+                  .filter((r) => {
+                    const matchStatus = safetyFilter === 'all' || r.status === safetyFilter;
+                    const matchSearch =
+                      !searchTerm ||
+                      r.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      r.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      r.referenceCode.toLowerCase().includes(searchTerm.toLowerCase());
+                    return matchStatus && matchSearch;
+                  })
+                  .map((report) => (
                   <tr key={report.id}>
                     <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{report.referenceCode}</td>
                     <td>{report.category}</td>
@@ -903,6 +948,22 @@ export const EmployerPortal: React.FC<EmployerPortalProps> = ({
                 </div>
               )}
 
+              {/* Visual 4-Step Lifecycle Status Progression */}
+              <div className="lifecycle-stepper">
+                <div className={`lifecycle-step ${['submitted', 'under_review', 'action_required', 'resolved'].includes(statusUpdateTarget) ? 'completed' : ''}`}>
+                  1. {t.submitted}
+                </div>
+                <div className={`lifecycle-step ${['under_review', 'action_required', 'resolved'].includes(statusUpdateTarget) ? 'completed' : ''}`}>
+                  2. {t.underReview}
+                </div>
+                <div className={`lifecycle-step ${['action_required', 'resolved'].includes(statusUpdateTarget) ? (statusUpdateTarget === 'action_required' ? 'active' : 'completed') : ''}`}>
+                  3. {t.actionRequired}
+                </div>
+                <div className={`lifecycle-step ${statusUpdateTarget === 'resolved' ? 'completed' : ''}`}>
+                  4. {t.resolved}
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Lifecycle Status *</label>
                 <select
@@ -910,10 +971,10 @@ export const EmployerPortal: React.FC<EmployerPortalProps> = ({
                   value={statusUpdateTarget}
                   onChange={(e) => setStatusUpdateTarget(e.target.value)}
                 >
-                  <option value="submitted">Submitted</option>
-                  <option value="under_review">Under Review</option>
-                  <option value="action_required">Action Required</option>
-                  <option value="resolved">Resolved</option>
+                  <option value="submitted">1. Submitted (Pending Review)</option>
+                  <option value="under_review">2. Under Review (Inspection Scheduled)</option>
+                  <option value="action_required">3. Action Required (Immediate Fix / Isolation)</option>
+                  <option value="resolved">4. Resolved (Remediated & Verified)</option>
                 </select>
               </div>
 

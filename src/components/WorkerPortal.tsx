@@ -73,6 +73,9 @@ export const WorkerPortal: React.FC<WorkerPortalProps> = ({
   const [newSkillYears, setNewSkillYears] = useState(2);
   const [skillModalOpen, setSkillModalOpen] = useState(false);
 
+  const [workerReports, setWorkerReports] = useState<any[]>([]);
+  const [workerFatigue, setWorkerFatigue] = useState<any[]>([]);
+
   // Status & Notification
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
@@ -81,11 +84,13 @@ export const WorkerPortal: React.FC<WorkerPortalProps> = ({
   const loadWorkerData = async () => {
     try {
       setLoading(true);
-      const [availShifts, attRecords, workerPayslips, workerSkills] = await Promise.all([
+      const [availShifts, attRecords, workerPayslips, workerSkills, allReports, allFatigue] = await Promise.all([
         api.getShifts(currentIndustry),
         api.getAttendance(currentIndustry, currentUser.id),
         api.getPayslips(currentIndustry, currentUser.id),
-        api.getSkills(currentUser.id)
+        api.getSkills(currentUser.id),
+        api.getSafetyReports(currentIndustry),
+        api.getFatigueAlerts(currentIndustry)
       ]);
 
       setShifts(availShifts);
@@ -93,6 +98,8 @@ export const WorkerPortal: React.FC<WorkerPortalProps> = ({
       setPayslips(workerPayslips);
       if (workerPayslips.length > 0) setSelectedPayslip(workerPayslips[0]);
       setSkills(workerSkills);
+      setWorkerReports(allReports.filter((r: any) => r.workerId === currentUser.id || (r.reporterDisplayName && r.reporterDisplayName.includes(currentUser.name))));
+      setWorkerFatigue(allFatigue.filter((f: any) => f.workerId === currentUser.id && f.status === 'active'));
 
       // Check if user currently has an active shift
       const active = attRecords.find((r) => r.workerId === currentUser.id && r.checkOutTime === null);
@@ -429,6 +436,24 @@ export const WorkerPortal: React.FC<WorkerPortalProps> = ({
       {/* ------------------------------------------------------------------ */}
       {activeTab === 'attendance' && (
         <>
+          {/* Active Rest & Fatigue Advisory Banner */}
+          {workerFatigue.length > 0 && (
+            <div className="alert-box alert-warning" role="region" aria-label="Rest and Fatigue Advisory">
+              <AlertTriangle size={22} color="#d97706" />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#92400e' }}>
+                  {t.fatigueWarningTitle}: {workerFatigue[0].metricValue}
+                </div>
+                <div style={{ fontSize: '0.84rem', marginTop: 4, color: '#78350f' }}>
+                  {workerFatigue[0].explanation}
+                </div>
+                <div style={{ fontSize: '0.78rem', marginTop: 6, fontWeight: 700, color: '#92400e' }}>
+                  ℹ️ {t.fatigueExplanation}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Active Shift Hero Card */}
           {activeAttendance ? (
             <div className="active-shift-hero">
@@ -875,6 +900,88 @@ export const WorkerPortal: React.FC<WorkerPortalProps> = ({
                 <p style={{ marginTop: 4 }}>
                   Your incident ticket is in the queue. You can check back anytime to see supervisor inspection notes.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Real-time Status Tracker of Worker's Reports */}
+          {workerReports.length > 0 && (
+            <div style={{ marginTop: 16, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', marginBottom: 10 }}>
+                📋 {t.myReports} ({workerReports.length})
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {workerReports.map((r: any) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 10,
+                      padding: 12,
+                      background: '#f8fafc'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.82rem', color: '#0f766e' }}>
+                          {r.referenceCode}
+                        </span>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', marginTop: 2 }}>
+                          {r.category}
+                        </div>
+                      </div>
+                      <span
+                        className={`badge ${
+                          r.status === 'resolved'
+                            ? 'badge-resolved'
+                            : r.status === 'action_required'
+                            ? 'badge-disputed'
+                            : 'badge-pending'
+                        }`}
+                      >
+                        {r.status === 'resolved'
+                          ? t.resolved
+                          : r.status === 'action_required'
+                          ? t.actionRequired
+                          : r.status === 'under_review'
+                          ? t.underReview
+                          : t.submitted}
+                      </span>
+                    </div>
+
+                    {/* Visual 4-Step Lifecycle */}
+                    <div className="lifecycle-stepper" style={{ marginTop: 8 }}>
+                      <div className={`lifecycle-step ${['submitted', 'under_review', 'action_required', 'resolved'].includes(r.status) ? 'completed' : ''}`}>
+                        1. {t.submitted}
+                      </div>
+                      <div className={`lifecycle-step ${['under_review', 'action_required', 'resolved'].includes(r.status) ? 'completed' : ''}`}>
+                        2. {t.underReview}
+                      </div>
+                      <div className={`lifecycle-step ${['action_required', 'resolved'].includes(r.status) ? (r.status === 'action_required' ? 'active' : 'completed') : ''}`}>
+                        3. {t.actionRequired}
+                      </div>
+                      <div className={`lifecycle-step ${r.status === 'resolved' ? 'completed' : ''}`}>
+                        4. {t.resolved}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '0.8rem', color: '#475569', marginTop: 6 }}>
+                      📍 {r.location}
+                    </div>
+
+                    {r.assignedPerson && (
+                      <div style={{ fontSize: '0.78rem', color: '#0284c7', marginTop: 4, fontWeight: 600 }}>
+                        👮 {t.assignedOfficer}: {r.assignedPerson}
+                      </div>
+                    )}
+
+                    {r.resolutionNotes && (
+                      <div style={{ background: '#ecfdf5', border: '1px solid #bbf7d0', borderRadius: 6, padding: 8, marginTop: 6, fontSize: '0.78rem', color: '#166534' }}>
+                        <strong>{t.resolutionNotes}:</strong> "{r.resolutionNotes}"
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

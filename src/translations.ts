@@ -33,6 +33,9 @@ export interface TranslationDictionary {
   approved: string;
   disputed: string;
   resolved: string;
+  submitted: string;
+  underReview: string;
+  actionRequired: string;
   reportHazard: string;
   hazardCategory: string;
   severity: string;
@@ -59,6 +62,13 @@ export interface TranslationDictionary {
   disputeShift: string;
   whyThisAmount: string;
   sdgGoal: string;
+  myReports: string;
+  resolutionNotes: string;
+  assignedOfficer: string;
+  filterStatus: string;
+  all: string;
+  searchPlaceholder: string;
+  safeQrVerified: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -89,12 +99,15 @@ export const translations: Record<Language, TranslationDictionary> = {
     hourlyRate: 'Hourly Rate',
     grossPay: 'Gross Earnings',
     netPay: 'Net Payable',
-    deductions: 'Statutory Deductions',
+    deductions: 'Configured Deductions',
     status: 'Status',
     pending: 'Pending Review',
     approved: 'Approved',
     disputed: 'Disputed',
     resolved: 'Resolved',
+    submitted: 'Submitted',
+    underReview: 'Under Review',
+    actionRequired: 'Action Required',
     reportHazard: 'Report Safety Hazard',
     hazardCategory: 'Hazard Category',
     severity: 'Risk Severity',
@@ -120,7 +133,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     approveShift: 'Approve Attendance',
     disputeShift: 'Flag Discrepancy',
     whyThisAmount: 'Why is my pay this amount?',
-    sdgGoal: 'UN SDG 8 — Decent Work & Economic Growth'
+    sdgGoal: 'UN SDG 8 — Decent Work & Economic Growth',
+    myReports: 'My Reported Hazards & Live Status',
+    resolutionNotes: 'Resolution & Corrective Actions',
+    assignedOfficer: 'Assigned Safety Officer',
+    filterStatus: 'Filter Status',
+    all: 'All Records',
+    searchPlaceholder: 'Search by keyword or location...',
+    safeQrVerified: 'Verified by Site QR Token'
   },
   ta: {
     appName: 'ஃபேர்ஷிப்ட் (FairShift)',
@@ -149,12 +169,15 @@ export const translations: Record<Language, TranslationDictionary> = {
     hourlyRate: 'மணி நேர ஊதியம்',
     grossPay: 'மொத்த வருமானம்',
     netPay: 'நிகர சம்பள தொகை',
-    deductions: 'சட்டரீதியான பிடித்தங்கள்',
+    deductions: 'கணக்கிடப்பட்ட பிடித்தங்கள்',
     status: 'நிலை',
     pending: 'சரிபார்ப்பில் உள்ளது',
     approved: 'ஒப்புதல் அளிக்கப்பட்டது',
     disputed: 'முரண்பாடு உள்ளது',
     resolved: 'தீர்க்கப்பட்டது',
+    submitted: 'சமர்ப்பிக்கப்பட்டது',
+    underReview: 'ஆய்வில் உள்ளது',
+    actionRequired: 'நடவடிக்கை தேவை',
     reportHazard: 'பாதுகாப்பு குறைபாட்டைப் புகாரளிக்கவும்',
     hazardCategory: 'குறைபாட்டின் பிரிவு',
     severity: 'ஆபத்தின் தீவிரம்',
@@ -180,6 +203,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     approveShift: 'வருகையை உறுதிசெய்',
     disputeShift: 'முரண்பாட்டை பதிவுசெய்',
     whyThisAmount: 'எனது சம்பளம் எவ்வாறு கணக்கிடப்பட்டது?',
-    sdgGoal: 'ஐ.நா. இலக்கு 8 — கண்ணியமான வேலை மற்றும் பொருளாதார வளர்ச்சி'
+    sdgGoal: 'ஐ.நா. இலக்கு 8 — கண்ணியமான வேலை மற்றும் பொருளாதார வளர்ச்சி',
+    myReports: 'எனது பாதுகாப்பு புகார்கள் மற்றும் நேரடி நிலை',
+    resolutionNotes: 'நடவடிக்கை மற்றும் தீர்வு குறிப்புகள்',
+    assignedOfficer: 'நியமிக்கப்பட்ட பாதுகாப்பு அதிகாரி',
+    filterStatus: 'நிலை வாரியாக வடிகட்டுக',
+    all: 'அனைத்தும்',
+    searchPlaceholder: 'குறிச்சொல் மூலம் தேடவும்...',
+    safeQrVerified: 'தள QR மூலம் சரிபார்க்கப்பட்டது'
   }
 };
