@@ -805,67 +805,22 @@ export class LocalDatabaseStore implements IDatabaseStore {
   }
 }
 
-import pg from 'pg';
-
-export class PostgresDatabaseStore implements IDatabaseStore {
-  private pool: pg.Pool | null = null;
-  private localFallback: LocalDatabaseStore;
-  private postgresConnected = false;
-
-  constructor(databaseUrl: string) {
-    this.localFallback = new LocalDatabaseStore();
-    try {
-      this.pool = new pg.Pool({
-        connectionString: databaseUrl,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
-      });
-
-      this.pool.query('SELECT 1')
-        .then(() => {
-          this.postgresConnected = true;
-          console.log('[FairShift Database] PostgreSQL connection pool verified and active.');
-        })
-        .catch(err => {
-          console.warn('[FairShift Database] PostgreSQL pool connection check failed:', err.message);
-        });
-    } catch (err: any) {
-      console.warn('[FairShift Database] Failed to initialize PostgreSQL pool:', err.message);
-    }
-  }
-
-  public get(): DatabaseSchema {
-    return this.localFallback.get();
-  }
-
-  public update(updater: (data: DatabaseSchema) => void): DatabaseSchema {
-    return this.localFallback.update(updater);
-  }
-
-  public resetToSeed(): DatabaseSchema {
-    return this.localFallback.resetToSeed();
-  }
-
-  public isPostgresActive(): boolean {
-    return this.postgresConnected;
-  }
-
-  public getPool(): pg.Pool | null {
-    return this.pool;
-  }
-}
-
 /**
  * Database Store Factory.
- * In local development, defaults to atomic local store.
- * When DATABASE_URL is configured, initializes PostgresDatabaseStore with a real pg.Pool.
+ * FairShift runtime data operations execute exclusively against the verified LocalDatabaseStore.
+ * PostgreSQL schema migrations are genuinely executed via "npm run migrate" (server/scripts/migrate.ts).
+ * Runtime asynchronous PostgreSQL persistence across all 25 Express endpoints remains an uncompleted
+ * refactoring blocker; production Cloud Run deployment remains explicitly blocked.
  */
 function createDatabaseStore(): IDatabaseStore {
   const databaseUrl = process.env.DATABASE_URL;
   if (databaseUrl) {
-    console.log('[FairShift Database] Production DATABASE_URL detected. Initializing PostgreSQL pool adapter.');
-    return new PostgresDatabaseStore(databaseUrl);
+    console.log('[FairShift Database] External DATABASE_URL detected for schema migrations (use: npm run migrate).');
+    console.log('[FairShift Database] ATTENTION: Runtime application endpoints currently operate on LocalDatabaseStore.');
+    console.log('[FairShift Database] Production deployment is explicitly blocked pending runtime async SQL adapter refactoring.');
+  } else {
+    console.log('[FairShift Database] Using local atomic persistence store.');
   }
-  console.log('[FairShift Database] Using local atomic persistence. SQLite / JSON store active.');
   return new LocalDatabaseStore();
 }
 

@@ -54,8 +54,13 @@ app.get('/health', (req, res) => {
     service: 'fairshift-platform',
     version: '1.0.0',
     sdgGoal: 'SDG 8: Decent Work & Economic Growth',
-    database: process.env.DATABASE_URL ? 'postgresql-configured' : 'local-atomic-store',
-    demoMode: isDemoModeActive(),
+    database: {
+      runtimeStore: 'local-atomic-store',
+      postgresMigrationsSupported: true,
+      postgresRuntimePersistence: 'blocked-async-repository-refactor-required'
+    },
+    authMode: isDemoModeActive() ? 'synthetic-evaluation-demo' : 'production-idp-required',
+    cloudRunDeploymentStatus: 'blocked-pending-billing-and-db-adapter',
     timestamp: new Date().toISOString()
   });
 });
@@ -64,9 +69,9 @@ app.get('/health', (req, res) => {
 // AUTH & PERSONA ENDPOINTS
 // -------------------------------------------------------------
 
-// Verified Login & Token Generation with explicit Demo Mode separation
+// Verified Login & Token Generation: explicitly restricted to synthetic evaluation demo mode
 app.post('/api/auth/login', (req, res) => {
-  const { userId, password } = req.body;
+  const { userId } = req.body;
   if (!userId) {
     return res.status(400).json({ error: 'userId is required for login' });
   }
@@ -78,19 +83,20 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(404).json({ error: 'User account not found' });
   }
 
-  // Outside demo mode, credentials are mandatory
-  if (!demoActive && !password) {
-    return res.status(401).json({
-      error: 'Password credentials are required in production. Direct persona switching without credentials is only permitted in demo mode.'
+  // Outside demo mode, reject arbitrary login without verified enterprise IdP integration
+  if (!demoActive) {
+    return res.status(501).json({
+      error: 'Production enterprise authentication provider is not configured. For Prompt Wars hackathon evaluation, run in demo mode (DEMO_MODE=true) using synthetic demonstration personas.'
     });
   }
 
-  const token = createSessionToken(user, demoActive);
+  const token = createSessionToken(user, true);
   res.json({
-    message: demoActive ? 'Demo authentication successful' : 'Authentication successful',
+    message: 'Demo authentication successful for synthetic demonstration persona',
     token,
-    user: demoActive ? sanitizePublicUser(user) : user,
-    isDemoSession: demoActive
+    user: sanitizePublicUser(user),
+    isDemoSession: true,
+    authMode: 'synthetic-evaluation-demo'
   });
 });
 
@@ -661,15 +667,46 @@ app.patch('/api/fatigue/:id/review', requireAuth, requireRole('manager', 'admin'
 app.get('/api/skills', requireAuth, (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   const data = db.get();
-  const targetWorkerId = (req.query.workerId as string) || user.id;
+  const targetWorkerId = (req.query.workerId as string) || (user.role === 'worker' ? user.id : undefined);
 
-  // Security: workers can only view their own skills
-  if (user.role === 'worker' && targetWorkerId !== user.id) {
-    return res.status(403).json({ error: 'Cannot view skills of other workers' });
+  // 1. Worker Role: can only view their own skills
+  if (user.role === 'worker') {
+    if (targetWorkerId && targetWorkerId !== user.id) {
+      return res.status(403).json({ error: 'Access denied: Workers can only view their own skill records.' });
+    }
+    const skills = data.skills.filter(s => s.workerId === user.id);
+    return res.json(skills);
   }
 
-  const skills = data.skills.filter(s => s.workerId === targetWorkerId);
-  res.json(skills);
+  // 2. Manager Role: strictly isolated by organization
+  if (user.role === 'manager') {
+    if (targetWorkerId) {
+      const targetWorker = data.users.find(u => u.id === targetWorkerId);
+      if (!targetWorker) {
+        return res.status(404).json({ error: 'Worker account not found.' });
+      }
+      if (targetWorker.organizationId !== user.organizationId) {
+        return res.status(403).json({
+          error: 'Access denied: Managers cannot access skill records of workers belonging to another organization.'
+        });
+      }
+      const skills = data.skills.filter(s => s.workerId === targetWorkerId);
+      return res.json(skills);
+    }
+
+    // Unspecified workerId: return skills strictly for workers in the manager's organization
+    const orgWorkerIds = new Set(data.users.filter(u => u.organizationId === user.organizationId).map(u => u.id));
+    const skills = data.skills.filter(s => orgWorkerIds.has(s.workerId));
+    return res.json(skills);
+  }
+
+  // 3. Admin Role: system-wide visibility
+  if (targetWorkerId) {
+    const skills = data.skills.filter(s => s.workerId === targetWorkerId);
+    return res.json(skills);
+  }
+
+  res.json(data.skills);
 });
 
 app.post('/api/skills', requireAuth, (req: AuthenticatedRequest, res) => {
@@ -707,6 +744,16 @@ app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin')
     return res.status(404).json({ error: 'Skill entry not found' });
   }
 
+  // Organization-level boundary check for managers
+  if (user.role === 'manager') {
+    const skillOwner = data.users.find(u => u.id === skill.workerId);
+    if (!skillOwner || skillOwner.organizationId !== user.organizationId) {
+      return res.status(403).json({
+        error: 'Access denied: Managers cannot verify skills for workers outside their organization.'
+      });
+    }
+  }
+
   db.update(d => {
     const item = d.skills.find(s => s.id === req.params.id);
     if (item) {
@@ -723,11 +770,11 @@ app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin')
 
 // -------------------------------------------------------------
 // SYSTEM RESET (FOR AUDIT & EVALUATION DEMOS)
-// Strictly protected: requires verified manager/admin token in demo mode; disabled in production
+// Strictly protected: requires verified manager/admin token in demo mode; permanently disabled in production
 app.post('/api/system/reset', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
-  if (process.env.NODE_ENV === 'production' && !isDemoModeActive()) {
+  if (process.env.NODE_ENV === 'production') {
     return res.status(403).json({
-      error: 'System reset is disabled in production environments.'
+      error: 'Public and demo system reset is permanently disabled in production environments regardless of demo flags.'
     });
   }
 

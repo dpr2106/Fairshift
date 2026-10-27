@@ -3,7 +3,7 @@
 > **Theme:** UN SDG 8 — Decent Work and Economic Growth  
 > **Target Industries:** Construction Sites & Healthcare Facilities
 
-[![Automated Tests](https://img.shields.io/badge/tests-18%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Automated Tests](https://img.shields.io/badge/tests-20%20passed%2C%200%20failed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/runtime-Node%20v22%20%7C%20TypeScript%20%7C%20React-blue.svg)]()
 [![Cloud Run Status](https://img.shields.io/badge/Cloud%20Run-Container%20Prepared%20(Pending%20Billing)-yellow.svg)]()
 [![Database](https://img.shields.io/badge/database-Local%20Store%20%7C%20Postgres%20Migration%20Ready-indigo.svg)]()
@@ -83,7 +83,7 @@ The project includes unit, integration, and security tests executing natively vi
 npm test
 ```
 
-### Test Coverage Summary (18 Tests Passed, 0 Failed):
+### Test Coverage Summary (20 Tests Passed, 0 Failed):
 - ✔ GET /health returns healthy status, service name, and database mode
 - ✔ Rejects forged session tokens or altered payloads with 401 Unauthorized
 - ✔ GET /api/shifts rejects unauthenticated request without token
@@ -96,6 +96,8 @@ npm test
 - ✔ GET /api/auth/users strictly sanitizes sensitive personal contact and wage information
 - ✔ POST /api/system/reset rejects unauthenticated calls and non-manager workers
 - ✔ Fails safely when SESSION_SECRET is missing or default in production
+- ✔ GET /api/skills strictly prevents managers from accessing skills of workers in another organization
+- ✔ PATCH /api/skills/:id/verify prevents managers from verifying skills of workers in another organization
 - ✔ Shift duration calculates correct regular hours for standard 8h day shift
 - ✔ Overnight shift correctly computes across midnight boundary with overtime
 - ✔ Rejects invalid checkout time that is before checkin time
@@ -103,7 +105,7 @@ npm test
 - ✔ Fatigue alert triggers when shift duration exceeds 10 hours
 - ✔ Fatigue alert triggers when rest between shifts is less than mandatory 11 hours
 
-**Result: 18 tests passed, 0 failed.**
+**Result: 20 tests passed, 0 failed.**
 
 ---
 
@@ -182,4 +184,4 @@ Check out our submission and live platform!
 - [x] **Initial Repository Size:** Strictly under 10 MB (clean source code without node_modules/build artifacts)
 - [x] **Zero Exposed Credentials:** No secrets or private keys in source
 - [x] **Deployment Target:** Google Cloud Run compliant Dockerfile and health check (live deployment pending billing)
-- [x] **Test Results:** 18 automated unit, integration, and security tests passing
+- [x] **Test Results:** 20 automated unit, integration, and security tests passing

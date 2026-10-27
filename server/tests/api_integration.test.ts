@@ -255,4 +255,31 @@ describe('FairShift REST API Integration, RBAC & Security Audit Tests', () => {
       process.env.SESSION_SECRET = origSecret;
     }
   });
+
+  // Test 13: Enforce organization-level access on GET /api/skills for managers
+  test('GET /api/skills strictly prevents managers from accessing skills of workers in another organization', async () => {
+    // Arumugam (Construction manager, org-const-01) attempts to query Priya's skills (Healthcare worker, org-health-01)
+    const res = await fetch(`${BASE_URL}/api/skills?workerId=usr-worker-priya`, {
+      headers: { 'Authorization': `Bearer ${managerToken}` }
+    });
+    assert.equal(res.status, 403);
+    const data = await res.json();
+    assert.ok(data.error.includes('Managers cannot access skill records of workers belonging to another organization'));
+  });
+
+  // Test 14: Enforce organization-level boundary on PATCH /api/skills/:id/verify
+  test('PATCH /api/skills/:id/verify prevents managers from verifying skills of workers in another organization', async () => {
+    // Arumugam (Construction manager) attempts to verify skill sk-h-01 belonging to Priya (Healthcare worker)
+    const res = await fetch(`${BASE_URL}/api/skills/sk-h-01/verify`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${managerToken}`
+      },
+      body: JSON.stringify({ certificateRef: 'MALICIOUS-CROSS-ORG-APPROVAL' })
+    });
+    assert.equal(res.status, 403);
+    const data = await res.json();
+    assert.ok(data.error.includes('Managers cannot verify skills for workers outside their organization'));
+  });
 });
