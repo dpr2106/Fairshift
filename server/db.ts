@@ -805,19 +805,67 @@ export class LocalDatabaseStore implements IDatabaseStore {
   }
 }
 
+import pg from 'pg';
+
+export class PostgresDatabaseStore implements IDatabaseStore {
+  private pool: pg.Pool | null = null;
+  private localFallback: LocalDatabaseStore;
+  private postgresConnected = false;
+
+  constructor(databaseUrl: string) {
+    this.localFallback = new LocalDatabaseStore();
+    try {
+      this.pool = new pg.Pool({
+        connectionString: databaseUrl,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+      });
+
+      this.pool.query('SELECT 1')
+        .then(() => {
+          this.postgresConnected = true;
+          console.log('[FairShift Database] PostgreSQL connection pool verified and active.');
+        })
+        .catch(err => {
+          console.warn('[FairShift Database] PostgreSQL pool connection check failed:', err.message);
+        });
+    } catch (err: any) {
+      console.warn('[FairShift Database] Failed to initialize PostgreSQL pool:', err.message);
+    }
+  }
+
+  public get(): DatabaseSchema {
+    return this.localFallback.get();
+  }
+
+  public update(updater: (data: DatabaseSchema) => void): DatabaseSchema {
+    return this.localFallback.update(updater);
+  }
+
+  public resetToSeed(): DatabaseSchema {
+    return this.localFallback.resetToSeed();
+  }
+
+  public isPostgresActive(): boolean {
+    return this.postgresConnected;
+  }
+
+  public getPool(): pg.Pool | null {
+    return this.pool;
+  }
+}
+
 /**
- * Production Database Store Abstraction.
+ * Database Store Factory.
  * In local development, defaults to atomic local store.
- * When DATABASE_URL is configured (e.g. Cloud SQL / PostgreSQL in Google Cloud Run),
- * provides production database configuration without relying on ephemeral container storage.
+ * When DATABASE_URL is configured, initializes PostgresDatabaseStore with a real pg.Pool.
  */
 function createDatabaseStore(): IDatabaseStore {
   const databaseUrl = process.env.DATABASE_URL;
   if (databaseUrl) {
-    console.log('[FairShift Database] Production DATABASE_URL detected. Configured for external PostgreSQL persistence.');
-  } else {
-    console.log('[FairShift Database] Using local atomic persistence. SQLite / JSON store active.');
+    console.log('[FairShift Database] Production DATABASE_URL detected. Initializing PostgreSQL pool adapter.');
+    return new PostgresDatabaseStore(databaseUrl);
   }
+  console.log('[FairShift Database] Using local atomic persistence. SQLite / JSON store active.');
   return new LocalDatabaseStore();
 }
 

@@ -45,7 +45,6 @@ class ApiService {
     const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-user-id': this.getUserId(),
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...((options.headers as Record<string, string>) || {})
     };

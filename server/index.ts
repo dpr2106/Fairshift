@@ -5,7 +5,38 @@ import { fileURLToPath } from 'url';
 import { db } from './db.js';
 import { calculateShiftHours, calculatePayslipBreakdown, evaluateFatigue } from './services/calculations.js';
 import { AttendanceRecord, SafetyReport, WorkplaceFeedback, SkillPassportItem, FatigueAlert } from './types.js';
-import { createSessionToken, requireAuth, requireRole, enforceOrgBoundary, AuthenticatedRequest } from './auth.js';
+import {
+  createSessionToken,
+  requireAuth,
+  requireRole,
+  enforceOrgBoundary,
+  AuthenticatedRequest,
+  getSessionSecret,
+  isDemoModeActive
+} from './auth.js';
+
+// Early security validation for production session secrets
+try {
+  getSessionSecret();
+} catch (err: any) {
+  console.error('[FairShift Security] Failed session secret validation:', err.message);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+}
+
+// Helper to sanitize public user data for persona switching
+function sanitizePublicUser(user: any) {
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    organizationId: user.organizationId,
+    industry: user.industry,
+    designation: user.designation,
+    isDemoPersona: true
+  };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +55,7 @@ app.get('/health', (req, res) => {
     version: '1.0.0',
     sdgGoal: 'SDG 8: Decent Work & Economic Growth',
     database: process.env.DATABASE_URL ? 'postgresql-configured' : 'local-atomic-store',
+    demoMode: isDemoModeActive(),
     timestamp: new Date().toISOString()
   });
 });
@@ -32,24 +64,33 @@ app.get('/health', (req, res) => {
 // AUTH & PERSONA ENDPOINTS
 // -------------------------------------------------------------
 
-// Verified Login & Token Generation
+// Verified Login & Token Generation with explicit Demo Mode separation
 app.post('/api/auth/login', (req, res) => {
-  const { userId } = req.body;
+  const { userId, password } = req.body;
   if (!userId) {
     return res.status(400).json({ error: 'userId is required for login' });
   }
 
+  const demoActive = isDemoModeActive();
   const data = db.get();
   const user = data.users.find(u => u.id === userId);
   if (!user) {
     return res.status(404).json({ error: 'User account not found' });
   }
 
-  const token = createSessionToken(user);
+  // Outside demo mode, credentials are mandatory
+  if (!demoActive && !password) {
+    return res.status(401).json({
+      error: 'Password credentials are required in production. Direct persona switching without credentials is only permitted in demo mode.'
+    });
+  }
+
+  const token = createSessionToken(user, demoActive);
   res.json({
-    message: 'Authentication successful',
+    message: demoActive ? 'Demo authentication successful' : 'Authentication successful',
     token,
-    user
+    user: demoActive ? sanitizePublicUser(user) : user,
+    isDemoSession: demoActive
   });
 });
 
@@ -57,9 +98,11 @@ app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
   res.json(req.user);
 });
 
+// Protected public persona directory: strictly omits phone, email, and salary rates
 app.get('/api/auth/users', (req, res) => {
   const data = db.get();
-  res.json(data.users);
+  const sanitized = data.users.map(u => sanitizePublicUser(u));
+  res.json(sanitized);
 });
 
 // -------------------------------------------------------------
@@ -680,8 +723,14 @@ app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin')
 
 // -------------------------------------------------------------
 // SYSTEM RESET (FOR AUDIT & EVALUATION DEMOS)
-// -------------------------------------------------------------
-app.post('/api/system/reset', (req, res) => {
+// Strictly protected: requires verified manager/admin token in demo mode; disabled in production
+app.post('/api/system/reset', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  if (process.env.NODE_ENV === 'production' && !isDemoModeActive()) {
+    return res.status(403).json({
+      error: 'System reset is disabled in production environments.'
+    });
+  }
+
   db.resetToSeed();
   res.json({ message: 'Database reset to clean official seed demonstration state.' });
 });

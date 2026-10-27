@@ -184,4 +184,75 @@ describe('FairShift REST API Integration, RBAC & Security Audit Tests', () => {
     const epfItem = slip.lineItems.find((l: any) => l.id === 'li-epf');
     assert.ok(epfItem.detail.includes('estimate'));
   });
+
+  // Test 9: Priority 1 Fix — x-user-id Header Alone Must NEVER Grant Authentication
+  test('Rejects x-user-id header without Bearer token with 401 Unauthorized', async () => {
+    // Attempt to access manager-only or protected route using just x-user-id spoofing
+    const res = await fetch(`${BASE_URL}/api/shifts`, {
+      headers: {
+        'x-user-id': 'usr-mgr-arumugam' // Maliciously claiming manager identity
+      }
+    });
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.ok(data.error.includes('Authentication required'));
+  });
+
+  // Test 10: Priority 1 Fix — GET /api/auth/users Protects Personal User Fields
+  test('GET /api/auth/users strictly sanitizes sensitive personal contact and wage information', async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/users`);
+    assert.equal(res.status, 200);
+    const users = await res.json();
+    assert.ok(Array.isArray(users) && users.length > 0);
+
+    for (const u of users) {
+      assert.equal(u.phone, undefined, 'User phone number must not be exposed publicly');
+      assert.equal(u.email, undefined, 'User email must not be exposed publicly');
+      assert.equal(u.hourlyRate, undefined, 'User hourly rate must not be exposed publicly');
+      assert.equal(u.overtimeRateMultiplier, undefined, 'Overtime rate multiplier must not be exposed publicly');
+      assert.ok(u.id);
+      assert.ok(u.name);
+      assert.ok(u.role);
+    }
+  });
+
+  // Test 11: Priority 1 Fix — POST /api/system/reset Rejects Unauthenticated or Worker Requests
+  test('POST /api/system/reset rejects unauthenticated calls and non-manager workers', async () => {
+    // 1. Unauthenticated reset call
+    const unauthRes = await fetch(`${BASE_URL}/api/system/reset`, { method: 'POST' });
+    assert.equal(unauthRes.status, 401);
+
+    // 2. Authenticated worker attempt
+    const workerRes = await fetch(`${BASE_URL}/api/system/reset`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${workerToken}` }
+    });
+    assert.equal(workerRes.status, 403);
+  });
+
+  // Test 12: Priority 1 Fix — Session Secret Fails Safely in Production
+  test('Fails safely when SESSION_SECRET is missing or default in production', async () => {
+    const { getSessionSecret } = await import('../auth.js');
+    const origEnv = process.env.NODE_ENV;
+    const origSecret = process.env.SESSION_SECRET;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.SESSION_SECRET;
+
+      assert.throws(
+        () => getSessionSecret(),
+        /FATAL SECURITY MISCONFIGURATION: SESSION_SECRET is not defined/
+      );
+
+      process.env.SESSION_SECRET = 'fairshift-secret-key-prompt-wars-2026';
+      assert.throws(
+        () => getSessionSecret(),
+        /FATAL SECURITY MISCONFIGURATION: SESSION_SECRET in production cannot use the known development secret/
+      );
+    } finally {
+      process.env.NODE_ENV = origEnv;
+      process.env.SESSION_SECRET = origSecret;
+    }
+  });
 });

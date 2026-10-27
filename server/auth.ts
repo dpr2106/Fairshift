@@ -3,7 +3,31 @@ import express from 'express';
 import { db } from './db.js';
 import { User, UserRole } from './types.js';
 
-const SECRET = process.env.SESSION_SECRET || 'fairshift-secret-key-prompt-wars-2026';
+const DEV_SECRET = 'fairshift-secret-key-prompt-wars-2026';
+
+export function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd) {
+    if (!secret) {
+      throw new Error(
+        'FATAL SECURITY MISCONFIGURATION: SESSION_SECRET is not defined in production. Server will not start with insecure session defaults.'
+      );
+    }
+    if (secret === DEV_SECRET || secret.includes('prompt-wars-2026') || secret.length < 32) {
+      throw new Error(
+        'FATAL SECURITY MISCONFIGURATION: SESSION_SECRET in production cannot use the known development secret and must be at least 32 characters long.'
+      );
+    }
+    return secret;
+  }
+  return secret || DEV_SECRET;
+}
+
+export function isDemoModeActive(): boolean {
+  // Demo persona switching is restricted to development or when explicitly enabled via DEMO_MODE='true'
+  return process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
+}
 
 export interface TokenPayload {
   userId: string;
@@ -11,23 +35,26 @@ export interface TokenPayload {
   organizationId: string;
   issuedAt: number;
   expiresAt: number;
+  isDemo?: boolean;
 }
 
 /**
  * Creates a signed cryptographic token for an authenticated user session.
  */
-export function createSessionToken(user: User): string {
+export function createSessionToken(user: User, isDemo = false): string {
+  const secret = getSessionSecret();
   const payload: TokenPayload = {
     userId: user.id,
     role: user.role,
     organizationId: user.organizationId,
     issuedAt: Date.now(),
-    expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours validity
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours validity
+    isDemo
   };
 
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', secret)
     .update(payloadB64)
     .digest('base64url');
 
@@ -43,8 +70,9 @@ export function verifySessionToken(tokenString: string): TokenPayload | null {
     if (parts.length !== 2) return null;
 
     const [payloadB64, signature] = parts;
+    const secret = getSessionSecret();
     const expectedSig = crypto
-      .createHmac('sha256', SECRET)
+      .createHmac('sha256', secret)
       .update(payloadB64)
       .digest('base64url');
 
@@ -65,11 +93,13 @@ export function verifySessionToken(tokenString: string): TokenPayload | null {
 
 export interface AuthenticatedRequest extends express.Request {
   user?: User;
+  tokenPayload?: TokenPayload;
 }
 
 /**
- * Express middleware requiring server-verified authentication.
- * Checks Authorization header Bearer token or pre-verified X-Session-Token.
+ * Express middleware requiring genuine server-verified authentication.
+ * Checks Authorization header Bearer token or X-Session-Token.
+ * Never accepts unverified headers (such as x-user-id) as proof of identity.
  */
 export function requireAuth(
   req: AuthenticatedRequest,
@@ -83,17 +113,6 @@ export function requireAuth(
     token = authHeader.substring(7).trim();
   } else if (req.headers['x-session-token']) {
     token = String(req.headers['x-session-token']).trim();
-  }
-
-  // Fallback for demo persona switching: if an x-user-id header is provided,
-  // we verify it exists in our registered users database and generate/verify identity
-  if (!token && req.headers['x-user-id']) {
-    const fallbackId = String(req.headers['x-user-id']);
-    const user = db.get().users.find(u => u.id === fallbackId);
-    if (user) {
-      req.user = user;
-      return next();
-    }
   }
 
   if (!token) {
@@ -117,6 +136,7 @@ export function requireAuth(
   }
 
   req.user = user;
+  req.tokenPayload = payload;
   next();
 }
 

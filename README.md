@@ -1,13 +1,12 @@
-<<<<<<< HEAD
 # FairShift — Decent Work, Safety & Transparency Platform
 > **Prompt Wars 2026 Hackathon | ACM Student Chapter, SRMIST**  
 > **Theme:** UN SDG 8 — Decent Work and Economic Growth  
 > **Target Industries:** Construction Sites & Healthcare Facilities
 
-[![Automated Tests](https://img.shields.io/badge/tests-14%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Automated Tests](https://img.shields.io/badge/tests-18%20passed%2C%200%20failed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/runtime-Node%20v22%20%7C%20TypeScript%20%7C%20React-blue.svg)]()
-[![Cloud Run Ready](https://img.shields.io/badge/deployment-Google%20Cloud%20Run-blue.svg)]()
-[![Database](https://img.shields.io/badge/database-PostgreSQL%20Ready%20%7C%20Local%20SQLite-indigo.svg)]()
+[![Cloud Run Status](https://img.shields.io/badge/Cloud%20Run-Container%20Prepared%20(Pending%20Billing)-yellow.svg)]()
+[![Database](https://img.shields.io/badge/database-Local%20Store%20%7C%20Postgres%20Migration%20Ready-indigo.svg)]()
 [![SDG 8](https://img.shields.io/badge/UN%20SDG%208-Decent%20Work-emerald.svg)]()
 
 ---
@@ -28,11 +27,11 @@ Employee-intensive sectors—notably **construction sites** and **hospitals**—
 ### Feature A: Shift Tracking & Verified Attendance
 - **Physical QR Token Validation:** Prevents fraudulent check-ins by validating against site-issued QR tokens.
 - **Overnight Calendar-Day Math:** Accurately computes shifts that cross midnight (e.g., 20:00 to 05:00) without negative timestamps.
-- **Statutory Overtime Calculation:** Automatically isolates standard hours (up to 8.0h) from overtime hours.
+- **Configurable Overtime Calculations:** Automatically isolates standard hours (up to 8.0h daily threshold) from overtime hours based on organizational parameters.
 - **Dual Status Workflow:** Distinguishes real-time recorded entries from manager-audited approvals (`Pending Review` → `Approved` / `Disputed`).
 
-### Feature B: Mathematically Transparent Payslips
-- **Line-by-Line Itemization:** Displays base pay, 1.5x statutory overtime multiplier, EPF (12% retirement corpus), ESIC (0.75% healthcare cover), and Construction Welfare Fund cess.
+### Feature B: Mathematically Transparent Wage Estimates
+- **Itemized Calculation Estimates:** Displays base pay, demonstration 1.5x overtime multiplier, EPF (12% retirement corpus estimate), ESIC (0.75% healthcare cover estimate), and Construction Welfare Fund cess. All payslips are explicitly labeled as demonstration estimates derived from workplace configuration rather than statutory legal certifications.
 - **Interactive "Why is my pay this amount?" Explainer:** Translates mathematical deductions and gross/net calculations into plain language.
 - **Text-to-Speech (TTS) Readout:** Built-in speech synthesis reads payslip breakdowns aloud in English or Tamil for low-literacy workers.
 
@@ -43,7 +42,7 @@ Employee-intensive sectors—notably **construction sites** and **hospitals**—
 - **Audit Lifecycle State Machine:** `Submitted` → `Under Review` → `Action Required` → `Resolved` with inspector assignment and resolution notes.
 
 ### Feature D: Confidential & Anonymous Workplace Voice
-- **Cryptographic Anonymity Firewall:** Explains the legal distinction between *Confidential* (known only to compliance auditor) and *Anonymous* (strict identity detachment where no `workerId` or phone number is stored in the database).
+- **Identity Detachment & Anonymous Feedback:** Strictly decouples worker identity from feedback submissions (omitting worker ID, telephone, and IP address) to provide retaliation-free reporting without unsupported claims of zero-knowledge cryptography.
 - **Aggregated Management Insights:** Displays macro sentiment distributions without individual worker attribution.
 
 ### Feature E: Non-Punitive Fatigue & Rest Advisories
@@ -55,9 +54,11 @@ Employee-intensive sectors—notably **construction sites** and **hospitals**—
 
 ---
 
-## 3. Multi-Industry Support
+## 3. Multi-Industry Support (Demonstration Datasets)
 
-| Configuration Dimension | 🏗️ Construction (Apex Metro Infra) | 🏥 Healthcare (Kaveri Multi-Speciality) |
+> **Demonstration Notice:** *All organizations, personas (e.g., "Apex Metro Infrastructure", "Kaveri Multi-Speciality Hospital"), attendance logs, and ticket histories in this repository are synthetic demonstration data created specifically for Prompt Wars 2026 hackathon evaluation.*
+
+| Configuration Dimension | 🏗️ Construction (*Apex Metro Infra — Demo*) | 🏥 Healthcare (*Kaveri Multi-Speciality — Demo*) |
 | :--- | :--- | :--- |
 | **Example Roles** | Mason / High-Rise Rigger, Site Electrician, Safety Marshall | Sanitation Specialist, Biohazard Tech, Auxiliary Nurse |
 | **Shift Types** | Day Pour (08:00–17:00), Overnight Gantry Launch (20:00–05:00) | ICU Sanitation (06:00–14:30), Overnight ER Trauma (21:30–06:30) |
@@ -68,21 +69,21 @@ Employee-intensive sectors—notably **construction sites** and **hospitals**—
 
 ## 4. Accessibility & Regional Language Support
 
-- **Bilingual Interface:** Instant switching between **English** and **Tamil (தமிழ்)** with 100% authentic translated UI strings.
-- **WCAG AAA Contrast & Touch Target Sizing:** Minimum 48px × 48px touch targets, high contrast ratios, and screen-reader accessibility labels.
+- **Bilingual Interface:** Instant switching between **English** and **Tamil (தமிழ்)** with authentic translated UI strings.
+- **Accessible Ergonomics:** Minimum 48px × 48px touch targets, visible keyboard focus indicators (`:focus-visible`), and high-contrast color palettes designed towards WCAG 2.2 AA accessibility guidelines.
 - **Voice Fallback:** Spoken hazard descriptions and audio payslip synthesis for low-literacy workers.
 
 ---
 
 ## 5. Automated Verification & Test Suite
 
-The project includes unit and integration tests executing natively via Node's test runner:
+The project includes unit, integration, and security tests executing natively via Node's test runner:
 
 ```bash
 npm test
 ```
 
-### Test Coverage Summary (14 Tests Passed, 0 Failed):
+### Test Coverage Summary (18 Tests Passed, 0 Failed):
 - ✔ GET /health returns healthy status, service name, and database mode
 - ✔ Rejects forged session tokens or altered payloads with 401 Unauthorized
 - ✔ GET /api/shifts rejects unauthenticated request without token
@@ -91,6 +92,10 @@ npm test
 - ✔ Check-in rejects invalid QR token
 - ✔ Workplace feedback strictly detaches identity and stores no workerId
 - ✔ Generated payslip has estimate status and itemized calculation notes
+- ✔ Rejects x-user-id header without Bearer token with 401 Unauthorized
+- ✔ GET /api/auth/users strictly sanitizes sensitive personal contact and wage information
+- ✔ POST /api/system/reset rejects unauthenticated calls and non-manager workers
+- ✔ Fails safely when SESSION_SECRET is missing or default in production
 - ✔ Shift duration calculates correct regular hours for standard 8h day shift
 - ✔ Overnight shift correctly computes across midnight boundary with overtime
 - ✔ Rejects invalid checkout time that is before checkin time
@@ -98,35 +103,33 @@ npm test
 - ✔ Fatigue alert triggers when shift duration exceeds 10 hours
 - ✔ Fatigue alert triggers when rest between shifts is less than mandatory 11 hours
 
-**Result: 14 tests passed, 0 failed.**
+**Result: 18 tests passed, 0 failed.**
 
 ---
 
-## 6. Database Persistence & Google Cloud Run Deployment Guide
+## 6. Database Persistence & Google Cloud Run Deployment (Pending)
 
-### Ephemeral Container Storage vs External PostgreSQL
-Google Cloud Run instances utilize an ephemeral filesystem that is cleared upon instance restarts and scale-to-zero cycles.
-- **Local Development:** FairShift runs with zero setup using local atomic file/SQLite persistence.
-- **Production Cloud Run:** Configure the `DATABASE_URL` environment variable pointing to an external PostgreSQL database (e.g., Google Cloud SQL for PostgreSQL). FairShift automatically detects `DATABASE_URL` and routes data persistence to PostgreSQL.
+### Database Architecture
+- **Local Development & Demo Mode:** FairShift runs with zero setup using atomic local JSON/SQLite persistence.
+- **PostgreSQL Driver & Migration Runner:** `pg` driver is configured in `package.json`. When `DATABASE_URL` is set, `npm run migrate` connects via `pg.Client` and applies `server/migrations/001_initial_schema.sql` in an atomic transaction.
+- **Runtime Persistence Architecture:** Application route handlers currently interact through the synchronous `IDatabaseStore` interface. Refactoring all 25 Express endpoints to asynchronous relational SQL queries represents an identified engineering blocker before production Cloud SQL deployment.
 
 ```bash
-# Execute initial schema migration
+# Execute initial schema migration against a live PostgreSQL instance
 npm run migrate
 ```
 
-### Container Configuration:
+### Google Cloud Run Deployment Status: **Pending Account Billing**
+The multi-stage [Dockerfile](Dockerfile) is verified and ready. Live hosting on Google Cloud Run is pending resolution of Google Cloud project billing (`fairshift-prompt-wars-2026`).
+
 - Listens dynamically on the `PORT` environment variable (`process.env.PORT || 8080`).
 - Multi-stage Docker build producing an image under 120 MB.
 - Provides a `/health` health-check endpoint.
 
-### Deploying to Google Cloud Run via gcloud CLI:
+#### Prepared Deployment Command (for when billing is resolved):
 
 ```bash
-# 1. Authenticate with Google Cloud
-gcloud auth login
-gcloud config set project YOUR_GCP_PROJECT_ID
-
-# 2. Build and Deploy directly to Cloud Run
+# Authenticate and deploy to Cloud Run
 gcloud run deploy fairshift \
   --source . \
   --region asia-south1 \
@@ -134,14 +137,6 @@ gcloud run deploy fairshift \
   --allow-unauthenticated \
   --port 8080
 ```
-
-### Deploying via Google Cloud Console:
-1. Open the [Google Cloud Console](https://console.cloud.google.com/run).
-2. Click **Create Service**.
-3. Choose **Continuously deploy from a repository** (select your public GitHub repository).
-4. Select **Dockerfile** as the build type.
-5. Set the Port to `8080` and allow unauthenticated invocations.
-6. Click **Create** to deploy.
 
 ---
 
@@ -152,7 +147,7 @@ gcloud run deploy fairshift \
 | **1. Real-World Impact** | Replaces paper muster rolls with validated QR check-ins, audited payslips, and actionable hazard triage. | Live Worker & Employer portals sharing a single persistent relational data model. |
 | **2. Relevance to SDG 8** | Directly targets Decent Work & Economic Growth by curbing uncompensated overtime and preventing fatal accidents. | Automated EPF/ESIC social protection itemization & fatigue rest flags. |
 | **3. Inclusivity & Ease of Use** | Mobile-first architecture, large touch targets, English/Tamil bilingual interface, voice-to-text, and TTS payslip readout. | Verified in mobile viewport and browser testing. |
-| **4. Technical Implementation** | Clean TypeScript architecture, strict RBAC, automated unit & integration tests, Cloud Run Dockerfile. | 12/12 automated test pass rate; zero external native compilation dependencies. |
+| **4. Technical Implementation** | Clean TypeScript architecture, strict RBAC, automated unit & integration tests, Cloud Run Dockerfile. | 18/18 automated test pass rate; zero external native compilation dependencies. |
 | **5. Feasibility & Scalability** | Configurable multi-industry engine supporting both Construction and Healthcare out-of-the-box. | Seamless industry toggle adjusting roles, hazards, and workflows. |
 
 ---
@@ -165,7 +160,7 @@ gcloud run deploy fairshift \
 Workforce exploitation and safety oversights remain a massive challenge in employee-intensive sectors like construction and healthcare. Millions of workers still rely on paper registers and WhatsApp groups, resulting in unpaid overtime, unaddressed hazards, and zero portable career records.
 
 FairShift solves this directly under UN SDG 8 (Decent Work and Economic Growth):
-✅ Transparent Payslips: Line-by-line wage calculations, statutory 1.5x overtime, and text-to-speech audio readouts.
+✅ Transparent Payslips: Line-by-line wage calculations, configurable 1.5x overtime estimates, and text-to-speech audio readouts.
 ✅ Shift & Attendance Tracking: Validated site QR verification with overnight shift handling.
 ✅ Safety Command Center: Retaliation-free hazard reporting with voice input and an audit lifecycle.
 ✅ Fatigue Advisories: Proactive rest gap monitoring to prevent accidents before they occur.
@@ -186,5 +181,5 @@ Check out our submission and live platform!
 - [x] **Single Branch Status:** Only 1 branch (`main`)
 - [x] **Initial Repository Size:** Strictly under 10 MB (clean source code without node_modules/build artifacts)
 - [x] **Zero Exposed Credentials:** No secrets or private keys in source
-- [x] **Deployment Target:** Google Cloud Run compliant Dockerfile and health check
-- [x] **Test Results:** 14 automated unit and integration tests passing
+- [x] **Deployment Target:** Google Cloud Run compliant Dockerfile and health check (live deployment pending billing)
+- [x] **Test Results:** 18 automated unit, integration, and security tests passing
