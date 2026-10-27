@@ -103,7 +103,7 @@ function mapShift(r: any): Shift {
   };
 }
 
-function mapAttendance(r: any): AttendanceRecord {
+export function mapAttendance(r: any): AttendanceRecord {
   return {
     id: r.id,
     workerId: r.worker_id,
@@ -114,7 +114,7 @@ function mapAttendance(r: any): AttendanceRecord {
     shiftTitle: r.shift_title,
     date: typeof r.date === 'string' ? r.date.split('T')[0] : (r.date?.toISOString ? r.date.toISOString().split('T')[0] : String(r.date)),
     checkInTime: r.check_in_time?.toISOString ? r.check_in_time.toISOString() : String(r.check_in_time),
-    checkOutTime: r.check_out_time ? (r.check_out_time.toISOString ? r.check_out_time.toISOString() : null) : null,
+    checkOutTime: r.check_out_time ? (r.check_out_time.toISOString ? r.check_out_time.toISOString() : String(r.check_out_time)) : null,
     regularHours: parseFloat(r.regular_hours || 0),
     overtimeHours: parseFloat(r.overtime_hours || 0),
     status: r.status,

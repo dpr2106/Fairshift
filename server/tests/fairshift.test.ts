@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateShiftHours, calculatePayslipBreakdown, evaluateFatigue } from '../services/calculations.js';
+import { mapAttendance } from '../postgresStore.js';
 import { User, AttendanceRecord } from '../types.js';
 
 describe('FairShift Core Logic & Arithmetic Verification', () => {
@@ -189,5 +190,40 @@ describe('FairShift Core Logic & Arithmetic Verification', () => {
     assert.ok(alert !== null);
     assert.equal(alert?.triggerType, 'insufficient_rest');
     assert.ok(alert?.metricValue.includes('7.0 hours rest between shifts'));
+  });
+
+  // Test 7: Attendance Record Mapping Robustness
+  test('mapAttendance correctly handles Date objects, non-null string timestamps, and null check-out times', () => {
+    // 1. String check_out_time must be preserved as a string
+    const stringRow = {
+      id: 'att-str',
+      worker_id: 'usr-1',
+      worker_name: 'Worker 1',
+      organization_id: 'org-1',
+      industry: 'construction',
+      shift_id: 'shift-1',
+      shift_title: 'Day Shift',
+      date: '2026-10-27',
+      check_in_time: '2026-10-27T08:00:00.000Z',
+      check_out_time: '2026-10-27T17:00:00.000Z',
+      regular_hours: '8',
+      overtime_hours: '1',
+      status: 'pending',
+      verification_method: 'qr',
+      review_notes: null
+    };
+    const stringMapped = mapAttendance(stringRow);
+    assert.equal(stringMapped.checkOutTime, '2026-10-27T17:00:00.000Z');
+
+    // 2. Date object check_out_time must be converted to ISO string
+    const dateObj = new Date('2026-10-27T17:00:00.000Z');
+    const dateRow = { ...stringRow, id: 'att-date', check_out_time: dateObj };
+    const dateMapped = mapAttendance(dateRow);
+    assert.equal(dateMapped.checkOutTime, '2026-10-27T17:00:00.000Z');
+
+    // 3. Null / undefined check_out_time must remain null
+    const nullRow = { ...stringRow, id: 'att-null', check_out_time: null };
+    const nullMapped = mapAttendance(nullRow);
+    assert.equal(nullMapped.checkOutTime, null);
   });
 });
