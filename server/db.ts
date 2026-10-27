@@ -30,7 +30,7 @@ export interface DatabaseSchema {
   skills: SkillPassportItem[];
 }
 
-function getSeedData(): DatabaseSchema {
+export function getSeedData(): DatabaseSchema {
   const organizations: Organization[] = [
     {
       id: 'org-const-01',
@@ -805,24 +805,153 @@ export class LocalDatabaseStore implements IDatabaseStore {
   }
 }
 
-/**
- * Database Store Factory.
- * FairShift runtime data operations execute exclusively against the verified LocalDatabaseStore.
- * PostgreSQL schema migrations are genuinely executed via "npm run migrate" (server/scripts/migrate.ts).
- * Runtime asynchronous PostgreSQL persistence across all 25 Express endpoints remains an uncompleted
- * refactoring blocker; production Cloud Run deployment remains explicitly blocked.
- */
-function createDatabaseStore(): IDatabaseStore {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (databaseUrl) {
-    console.log('[FairShift Database] External DATABASE_URL detected for schema migrations (use: npm run migrate).');
-    console.log('[FairShift Database] ATTENTION: Runtime application endpoints currently operate on LocalDatabaseStore.');
-    console.log('[FairShift Database] Production deployment is explicitly blocked pending runtime async SQL adapter refactoring.');
-  } else {
-    console.log('[FairShift Database] Using local atomic persistence store.');
-  }
-  return new LocalDatabaseStore();
+import { PostgresStore } from './postgresStore.js';
+
+export interface IAsyncDatabaseStore {
+  isPostgres(): boolean;
+  getOrganizations(): Promise<Organization[]>;
+  getUsers(): Promise<User[]>;
+  getUserById(id: string): Promise<User | null>;
+  getShifts(): Promise<Shift[]>;
+  createShift(s: Shift): Promise<Shift>;
+  getAttendance(): Promise<AttendanceRecord[]>;
+  createAttendance(a: AttendanceRecord): Promise<AttendanceRecord>;
+  updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null>;
+  getPayslips(): Promise<Payslip[]>;
+  createPayslip(p: Payslip): Promise<Payslip>;
+  getSafetyReports(): Promise<SafetyReport[]>;
+  createSafetyReport(s: SafetyReport): Promise<SafetyReport>;
+  updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null>;
+  getFeedback(): Promise<WorkplaceFeedback[]>;
+  createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback>;
+  getFatigueAlerts(): Promise<FatigueAlert[]>;
+  createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert>;
+  resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null>;
+  getSkills(): Promise<SkillPassportItem[]>;
+  createSkill(sk: SkillPassportItem): Promise<SkillPassportItem>;
+  verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null>;
 }
 
-export const db: IDatabaseStore = createDatabaseStore();
+export class PostgresDatabaseStoreAdapter implements IAsyncDatabaseStore {
+  private pg: PostgresStore;
+
+  constructor(databaseUrl: string) {
+    this.pg = new PostgresStore(databaseUrl);
+  }
+
+  isPostgres(): boolean { return true; }
+  getOrganizations(): Promise<Organization[]> { return this.pg.getOrganizations(); }
+  getUsers(): Promise<User[]> { return this.pg.getUsers(); }
+  getUserById(id: string): Promise<User | null> { return this.pg.getUserById(id); }
+  getShifts(): Promise<Shift[]> { return this.pg.getShifts(); }
+  createShift(s: Shift): Promise<Shift> { return this.pg.createShift(s); }
+  getAttendance(): Promise<AttendanceRecord[]> { return this.pg.getAttendance(); }
+  createAttendance(a: AttendanceRecord): Promise<AttendanceRecord> { return this.pg.createAttendance(a); }
+  updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null> { return this.pg.updateAttendance(id, updates); }
+  getPayslips(): Promise<Payslip[]> { return this.pg.getPayslips(); }
+  createPayslip(p: Payslip): Promise<Payslip> { return this.pg.createPayslip(p); }
+  getSafetyReports(): Promise<SafetyReport[]> { return this.pg.getSafetyReports(); }
+  createSafetyReport(s: SafetyReport): Promise<SafetyReport> { return this.pg.createSafetyReport(s); }
+  updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null> { return this.pg.updateSafetyReportStatus(id, status, assignedPerson, resolutionNotes); }
+  getFeedback(): Promise<WorkplaceFeedback[]> { return this.pg.getFeedback(); }
+  createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback> { return this.pg.createFeedback(f); }
+  getFatigueAlerts(): Promise<FatigueAlert[]> { return this.pg.getFatigueAlerts(); }
+  createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert> { return this.pg.createFatigueAlert(fa); }
+  resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null> { return this.pg.resolveFatigueAlert(id, reviewedBy, reviewNotes); }
+  getSkills(): Promise<SkillPassportItem[]> { return this.pg.getSkills(); }
+  createSkill(sk: SkillPassportItem): Promise<SkillPassportItem> { return this.pg.createSkill(sk); }
+  verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null> { return this.pg.verifySkill(id, verifierName, verifierDesignation, certificateRef); }
+}
+
+export class LocalDatabaseStoreAdapter implements IAsyncDatabaseStore {
+  private local: LocalDatabaseStore;
+
+  constructor(local: LocalDatabaseStore) {
+    this.local = local;
+  }
+
+  isPostgres(): boolean { return false; }
+  getOrganizations(): Promise<Organization[]> { return Promise.resolve(this.local.get().organizations); }
+  getUsers(): Promise<User[]> { return Promise.resolve(this.local.get().users); }
+  getUserById(id: string): Promise<User | null> { return Promise.resolve(this.local.get().users.find(u => u.id === id) || null); }
+  getShifts(): Promise<Shift[]> { return Promise.resolve(this.local.get().shifts); }
+  createShift(s: Shift): Promise<Shift> { this.local.update(d => { d.shifts.unshift(s); }); return Promise.resolve(s); }
+  getAttendance(): Promise<AttendanceRecord[]> { return Promise.resolve(this.local.get().attendance); }
+  createAttendance(a: AttendanceRecord): Promise<AttendanceRecord> { this.local.update(d => { d.attendance.unshift(a); }); return Promise.resolve(a); }
+  updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null> {
+    let updated: AttendanceRecord | null = null;
+    this.local.update(d => {
+      const item = d.attendance.find(a => a.id === id);
+      if (item) { Object.assign(item, updates); updated = item; }
+    });
+    return Promise.resolve(updated);
+  }
+  getPayslips(): Promise<Payslip[]> { return Promise.resolve(this.local.get().payslips); }
+  createPayslip(p: Payslip): Promise<Payslip> { this.local.update(d => { d.payslips.unshift(p); }); return Promise.resolve(p); }
+  getSafetyReports(): Promise<SafetyReport[]> { return Promise.resolve(this.local.get().safetyReports); }
+  createSafetyReport(s: SafetyReport): Promise<SafetyReport> { this.local.update(d => { d.safetyReports.unshift(s); }); return Promise.resolve(s); }
+  updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null> {
+    let updated: SafetyReport | null = null;
+    this.local.update(d => {
+      const item = d.safetyReports.find(r => r.id === id);
+      if (item) {
+        item.status = status as any;
+        if (assignedPerson) item.assignedPerson = assignedPerson;
+        if (resolutionNotes) item.resolutionNotes = resolutionNotes;
+        updated = item;
+      }
+    });
+    return Promise.resolve(updated);
+  }
+  getFeedback(): Promise<WorkplaceFeedback[]> { return Promise.resolve(this.local.get().feedback); }
+  createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback> { this.local.update(d => { d.feedback.unshift(f); }); return Promise.resolve(f); }
+  getFatigueAlerts(): Promise<FatigueAlert[]> { return Promise.resolve(this.local.get().fatigueAlerts); }
+  createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert> { this.local.update(d => { d.fatigueAlerts.unshift(fa); }); return Promise.resolve(fa); }
+  resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null> {
+    let updated: FatigueAlert | null = null;
+    this.local.update(d => {
+      const item = d.fatigueAlerts.find(a => a.id === id);
+      if (item) {
+        item.status = 'reviewed';
+        item.reviewedBy = reviewedBy;
+        item.reviewNotes = reviewNotes || 'Fatigue risk reviewed and compensatory rest acknowledged.';
+        updated = item;
+      }
+    });
+    return Promise.resolve(updated);
+  }
+  getSkills(): Promise<SkillPassportItem[]> { return Promise.resolve(this.local.get().skills); }
+  createSkill(sk: SkillPassportItem): Promise<SkillPassportItem> { this.local.update(d => { d.skills.unshift(sk); }); return Promise.resolve(sk); }
+  verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null> {
+    let updated: SkillPassportItem | null = null;
+    this.local.update(d => {
+      const item = d.skills.find(s => s.id === id);
+      if (item) {
+        item.isVerified = true;
+        item.verifierName = verifierName;
+        item.verifierDesignation = verifierDesignation;
+        item.verifiedAt = new Date().toISOString().split('T')[0];
+        if (certificateRef) item.certificateRef = certificateRef;
+        updated = item;
+      }
+    });
+    return Promise.resolve(updated);
+  }
+}
+
+function createAsyncDatabaseStore(): IAsyncDatabaseStore {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    console.log('[FairShift Database] Production DATABASE_URL active. Real Neon PostgreSQL persistence initialized.');
+    return new PostgresDatabaseStoreAdapter(databaseUrl);
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: DATABASE_URL is missing in production. Refusing to run with local filesystem storage.');
+  }
+  console.log('[FairShift Database] No DATABASE_URL provided. Running in local atomic development mode.');
+  return new LocalDatabaseStoreAdapter(new LocalDatabaseStore());
+}
+
+export const dbAsync: IAsyncDatabaseStore = createAsyncDatabaseStore();
+export const db: IDatabaseStore = new LocalDatabaseStore();
 

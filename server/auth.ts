@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import express from 'express';
-import { db } from './db.js';
+import { dbAsync } from './db.js';
 import { User, UserRole } from './types.js';
 
 const DEV_SECRET = 'fairshift-secret-key-prompt-wars-2026';
@@ -101,7 +101,7 @@ export interface AuthenticatedRequest extends express.Request {
  * Checks Authorization header Bearer token or X-Session-Token.
  * Never accepts unverified headers (such as x-user-id) as proof of identity.
  */
-export function requireAuth(
+export async function requireAuth(
   req: AuthenticatedRequest,
   res: express.Response,
   next: express.NextFunction
@@ -128,16 +128,20 @@ export function requireAuth(
     });
   }
 
-  const user = db.get().users.find(u => u.id === payload.userId);
-  if (!user) {
-    return res.status(401).json({
-      error: 'User account associated with session token was not found.'
-    });
-  }
+  try {
+    const user = await dbAsync.getUserById(payload.userId);
+    if (!user) {
+      return res.status(401).json({
+        error: 'User account associated with session token was not found.'
+      });
+    }
 
-  req.user = user;
-  req.tokenPayload = payload;
-  next();
+    req.user = user;
+    req.tokenPayload = payload;
+    next();
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Database authentication verification failed: ' + err.message });
+  }
 }
 
 /**

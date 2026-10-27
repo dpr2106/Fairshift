@@ -5,8 +5,8 @@
 
 [![Automated Tests](https://img.shields.io/badge/tests-20%20passed%2C%200%20failed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/runtime-Node%20v22%20%7C%20TypeScript%20%7C%20React-blue.svg)]()
-[![Cloud Run Status](https://img.shields.io/badge/Cloud%20Run-Container%20Prepared%20(Pending%20Billing)-yellow.svg)]()
-[![Database](https://img.shields.io/badge/database-Local%20Store%20%7C%20Postgres%20Migration%20Ready-indigo.svg)]()
+[![Deployment](https://img.shields.io/badge/Vercel-Deployment%20Ready-black.svg)]()
+[![Database](https://img.shields.io/badge/database-Neon%20PostgreSQL%20%7C%20Live%20Persistence-brightgreen.svg)]()
 [![SDG 8](https://img.shields.io/badge/UN%20SDG%208-Decent%20Work-emerald.svg)]()
 
 ---
@@ -109,36 +109,31 @@ npm test
 
 ---
 
-## 6. Database Persistence & Google Cloud Run Deployment (Pending)
+## 6. Real PostgreSQL Persistence & Vercel Deployment
 
-### Database Architecture
-- **Local Development & Demo Mode:** FairShift runs with zero setup using atomic local JSON/SQLite persistence.
-- **PostgreSQL Driver & Migration Runner:** `pg` driver is configured in `package.json`. When `DATABASE_URL` is set, `npm run migrate` connects via `pg.Client` and applies `server/migrations/001_initial_schema.sql` in an atomic transaction.
-- **Runtime Persistence Architecture:** Application route handlers currently interact through the synchronous `IDatabaseStore` interface. Refactoring all 25 Express endpoints to asynchronous relational SQL queries represents an identified engineering blocker before production Cloud SQL deployment.
+### Database Architecture: Neon PostgreSQL
+- **Serverless PostgreSQL Driver:** Connects using `@neondatabase/serverless` with connection pooling over standard secure HTTPS/WebSocket (port 443), fully compatible with serverless functions and restrictive networks.
+- **Real Asynchronous Queries:** All Express API endpoints are asynchronous and persist state directly to Neon PostgreSQL across all 9 entities:
+  `organizations`, `users`, `shifts`, `attendance`, `payslips`, `safety_reports`, `workplace_feedback`, `fatigue_alerts`, and `skills`.
+- **Atomic Migrations:** Schema defined in `server/migrations/001_initial_schema.sql` creates all 9 tables with foreign keys and indexes. Run via:
+  ```bash
+  npm run migrate
+  ```
+- **Verified Persistence:** Reads and writes are executed via parameterized SQL queries with verified record retrieval across independent requests.
 
-```bash
-# Execute initial schema migration against a live PostgreSQL instance
-npm run migrate
-```
+### Vercel Serverless Deployment Architecture
+The repository is pre-configured with `vercel.json` and a serverless API entry point (`api/index.ts`) for single-command or Git-integrated Vercel deployment:
 
-### Google Cloud Run Deployment Status: **Pending Account Billing**
-The multi-stage [Dockerfile](Dockerfile) is verified and ready. Live hosting on Google Cloud Run is pending resolution of Google Cloud project billing (`fairshift-prompt-wars-2026`).
+1. **Frontend:** React + Vite builds to `dist/client`. Static assets and SPA routes are routed via Vercel rewrites.
+2. **Backend API:** Express serverless function (`api/index.ts`) handles all `/api/*` and `/health` requests.
+3. **SPA Routing:** Configured rewrite rules ensure client-side navigation and direct page refreshes resolve seamlessly.
 
-- Listens dynamically on the `PORT` environment variable (`process.env.PORT || 8080`).
-- Multi-stage Docker build producing an image under 120 MB.
-- Provides a `/health` health-check endpoint.
-
-#### Prepared Deployment Command (for when billing is resolved):
-
-```bash
-# Authenticate and deploy to Cloud Run
-gcloud run deploy fairshift \
-  --source . \
-  --region asia-south1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --port 8080
-```
+#### Environment Variables Required in Vercel:
+Configure these in **Vercel Project Settings → Environment Variables**:
+- `DATABASE_URL`: Your pooled Neon PostgreSQL connection string (`postgresql://...sslmode=require`).
+- `SESSION_SECRET`: A high-entropy cryptographic secret (minimum 32 characters) for HMAC token signing.
+- `DEMO_MODE`: Set to `true` to enable hackathon persona switching and sample data for evaluators.
+- `NODE_ENV`: Set to `production`.
 
 ---
 
@@ -169,10 +164,10 @@ FairShift solves this directly under UN SDG 8 (Decent Work and Economic Growth):
 ✅ Cross-Sector Agnostic: Configured for Construction Sites (Apex Metro) and Healthcare Facilities (Kaveri Hospital).
 ✅ Regional Language Inclusivity: Full bilingual support in English and Tamil (தமிழ்).
 
-Tech Stack: TypeScript, Express, React, Vite, and containerized for Google Cloud Run.
+Tech Stack: TypeScript, Express, React, Vite, Neon Serverless PostgreSQL, and Vercel.
 
 Check out our submission and live platform!
-#PromptWars2026 #SRMIST #ACM #DecentWork #SDG8 #GoogleCloud #CloudRun #WebDevelopment #TypeScript #SocialImpact
+#PromptWars2026 #SRMIST #ACM #DecentWork #SDG8 #Neon #PostgreSQL #Vercel #WebDevelopment #TypeScript #SocialImpact
 ```
 
 ---
@@ -183,5 +178,6 @@ Check out our submission and live platform!
 - [x] **Single Branch Status:** Only 1 branch (`main`)
 - [x] **Initial Repository Size:** Strictly under 10 MB (clean source code without node_modules/build artifacts)
 - [x] **Zero Exposed Credentials:** No secrets or private keys in source
-- [x] **Deployment Target:** Google Cloud Run compliant Dockerfile and health check (live deployment pending billing)
+- [x] **Database Persistence:** Real asynchronous Neon PostgreSQL queries across all 9 schema entities
+- [x] **Deployment Target:** Vercel serverless + SPA deployment configuration (`vercel.json`, `api/index.ts`)
 - [x] **Test Results:** 20 automated unit, integration, and security tests passing
