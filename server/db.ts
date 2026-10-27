@@ -806,28 +806,55 @@ export class LocalDatabaseStore implements IDatabaseStore {
 }
 
 import { PostgresStore } from './postgresStore.js';
+import type {
+  ShiftFilter,
+  AttendanceFilter,
+  PayslipFilter,
+  SafetyReportFilter,
+  FeedbackFilter,
+  FatigueAlertFilter,
+  SkillFilter
+} from './postgresStore.js';
+
+export type {
+  ShiftFilter,
+  AttendanceFilter,
+  PayslipFilter,
+  SafetyReportFilter,
+  FeedbackFilter,
+  FatigueAlertFilter,
+  SkillFilter
+};
 
 export interface IAsyncDatabaseStore {
   isPostgres(): boolean;
   getOrganizations(): Promise<Organization[]>;
-  getUsers(): Promise<User[]>;
+  getOrganizationById(id: string): Promise<Organization | null>;
+  getUsers(filter?: { organizationId?: string; role?: string }): Promise<User[]>;
   getUserById(id: string): Promise<User | null>;
-  getShifts(): Promise<Shift[]>;
+  getShifts(filter?: ShiftFilter): Promise<Shift[]>;
+  getShiftById(id: string): Promise<Shift | null>;
   createShift(s: Shift): Promise<Shift>;
-  getAttendance(): Promise<AttendanceRecord[]>;
+  getAttendance(filter?: AttendanceFilter): Promise<AttendanceRecord[]>;
+  getAttendanceById(id: string): Promise<AttendanceRecord | null>;
+  getActiveAttendance(workerId: string): Promise<AttendanceRecord | null>;
   createAttendance(a: AttendanceRecord): Promise<AttendanceRecord>;
   updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null>;
-  getPayslips(): Promise<Payslip[]>;
+  getPayslips(filter?: PayslipFilter): Promise<Payslip[]>;
+  getPayslipById(id: string): Promise<Payslip | null>;
   createPayslip(p: Payslip): Promise<Payslip>;
-  getSafetyReports(): Promise<SafetyReport[]>;
+  getSafetyReports(filter?: SafetyReportFilter): Promise<SafetyReport[]>;
+  getSafetyReportById(id: string): Promise<SafetyReport | null>;
   createSafetyReport(s: SafetyReport): Promise<SafetyReport>;
   updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null>;
-  getFeedback(): Promise<WorkplaceFeedback[]>;
+  getFeedback(filter?: FeedbackFilter): Promise<WorkplaceFeedback[]>;
   createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback>;
-  getFatigueAlerts(): Promise<FatigueAlert[]>;
+  getFatigueAlerts(filter?: FatigueAlertFilter): Promise<FatigueAlert[]>;
+  getFatigueAlertById(id: string): Promise<FatigueAlert | null>;
   createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert>;
   resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null>;
-  getSkills(): Promise<SkillPassportItem[]>;
+  getSkills(filter?: SkillFilter): Promise<SkillPassportItem[]>;
+  getSkillById(id: string): Promise<SkillPassportItem | null>;
   createSkill(sk: SkillPassportItem): Promise<SkillPassportItem>;
   verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null>;
 }
@@ -841,24 +868,33 @@ export class PostgresDatabaseStoreAdapter implements IAsyncDatabaseStore {
 
   isPostgres(): boolean { return true; }
   getOrganizations(): Promise<Organization[]> { return this.pg.getOrganizations(); }
-  getUsers(): Promise<User[]> { return this.pg.getUsers(); }
+  getOrganizationById(id: string): Promise<Organization | null> { return this.pg.getOrganizationById(id); }
+  getUsers(filter?: { organizationId?: string; role?: string }): Promise<User[]> { return this.pg.getUsers(filter); }
   getUserById(id: string): Promise<User | null> { return this.pg.getUserById(id); }
-  getShifts(): Promise<Shift[]> { return this.pg.getShifts(); }
+  getShifts(filter?: ShiftFilter): Promise<Shift[]> { return this.pg.getShifts(filter); }
+  getShiftById(id: string): Promise<Shift | null> { return this.pg.getShiftById(id); }
   createShift(s: Shift): Promise<Shift> { return this.pg.createShift(s); }
-  getAttendance(): Promise<AttendanceRecord[]> { return this.pg.getAttendance(); }
+  getAttendance(filter?: AttendanceFilter): Promise<AttendanceRecord[]> { return this.pg.getAttendance(filter); }
+  getAttendanceById(id: string): Promise<AttendanceRecord | null> { return this.pg.getAttendanceById(id); }
+  getActiveAttendance(workerId: string): Promise<AttendanceRecord | null> { return this.pg.getActiveAttendance(workerId); }
   createAttendance(a: AttendanceRecord): Promise<AttendanceRecord> { return this.pg.createAttendance(a); }
   updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null> { return this.pg.updateAttendance(id, updates); }
-  getPayslips(): Promise<Payslip[]> { return this.pg.getPayslips(); }
+  getPayslips(filter?: PayslipFilter): Promise<Payslip[]> { return this.pg.getPayslips(filter); }
+  getPayslipById(id: string): Promise<Payslip | null> { return this.pg.getPayslipById(id); }
   createPayslip(p: Payslip): Promise<Payslip> { return this.pg.createPayslip(p); }
-  getSafetyReports(): Promise<SafetyReport[]> { return this.pg.getSafetyReports(); }
+  getSafetyReports(filter?: SafetyReportFilter): Promise<SafetyReport[]>;
+  getSafetyReports(filter?: SafetyReportFilter): Promise<SafetyReport[]> { return this.pg.getSafetyReports(filter); }
+  getSafetyReportById(id: string): Promise<SafetyReport | null> { return this.pg.getSafetyReportById(id); }
   createSafetyReport(s: SafetyReport): Promise<SafetyReport> { return this.pg.createSafetyReport(s); }
   updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null> { return this.pg.updateSafetyReportStatus(id, status, assignedPerson, resolutionNotes); }
-  getFeedback(): Promise<WorkplaceFeedback[]> { return this.pg.getFeedback(); }
+  getFeedback(filter?: FeedbackFilter): Promise<WorkplaceFeedback[]> { return this.pg.getFeedback(filter); }
   createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback> { return this.pg.createFeedback(f); }
-  getFatigueAlerts(): Promise<FatigueAlert[]> { return this.pg.getFatigueAlerts(); }
+  getFatigueAlerts(filter?: FatigueAlertFilter): Promise<FatigueAlert[]> { return this.pg.getFatigueAlerts(filter); }
+  getFatigueAlertById(id: string): Promise<FatigueAlert | null> { return this.pg.getFatigueAlertById(id); }
   createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert> { return this.pg.createFatigueAlert(fa); }
   resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null> { return this.pg.resolveFatigueAlert(id, reviewedBy, reviewNotes); }
-  getSkills(): Promise<SkillPassportItem[]> { return this.pg.getSkills(); }
+  getSkills(filter?: SkillFilter): Promise<SkillPassportItem[]> { return this.pg.getSkills(filter); }
+  getSkillById(id: string): Promise<SkillPassportItem | null> { return this.pg.getSkillById(id); }
   createSkill(sk: SkillPassportItem): Promise<SkillPassportItem> { return this.pg.createSkill(sk); }
   verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null> { return this.pg.verifySkill(id, verifierName, verifierDesignation, certificateRef); }
 }
@@ -872,24 +908,105 @@ export class LocalDatabaseStoreAdapter implements IAsyncDatabaseStore {
 
   isPostgres(): boolean { return false; }
   getOrganizations(): Promise<Organization[]> { return Promise.resolve(this.local.get().organizations); }
-  getUsers(): Promise<User[]> { return Promise.resolve(this.local.get().users); }
-  getUserById(id: string): Promise<User | null> { return Promise.resolve(this.local.get().users.find(u => u.id === id) || null); }
-  getShifts(): Promise<Shift[]> { return Promise.resolve(this.local.get().shifts); }
-  createShift(s: Shift): Promise<Shift> { this.local.update(d => { d.shifts.unshift(s); }); return Promise.resolve(s); }
-  getAttendance(): Promise<AttendanceRecord[]> { return Promise.resolve(this.local.get().attendance); }
-  createAttendance(a: AttendanceRecord): Promise<AttendanceRecord> { this.local.update(d => { d.attendance.unshift(a); }); return Promise.resolve(a); }
+  getOrganizationById(id: string): Promise<Organization | null> {
+    return Promise.resolve(this.local.get().organizations.find(o => o.id === id) || null);
+  }
+
+  getUsers(filter?: { organizationId?: string; role?: string }): Promise<User[]> {
+    let list = this.local.get().users;
+    if (filter?.organizationId) list = list.filter(u => u.organizationId === filter.organizationId);
+    if (filter?.role) list = list.filter(u => u.role === filter.role);
+    return Promise.resolve(list);
+  }
+
+  getUserById(id: string): Promise<User | null> {
+    return Promise.resolve(this.local.get().users.find(u => u.id === id) || null);
+  }
+
+  getShifts(filter?: ShiftFilter): Promise<Shift[]> {
+    let list = this.local.get().shifts;
+    if (filter?.organizationId) list = list.filter(s => s.organizationId === filter.organizationId);
+    if (filter?.industry) list = list.filter(s => s.industry === filter.industry);
+    return Promise.resolve(list);
+  }
+
+  getShiftById(id: string): Promise<Shift | null> {
+    return Promise.resolve(this.local.get().shifts.find(s => s.id === id) || null);
+  }
+
+  createShift(s: Shift): Promise<Shift> {
+    this.local.update(d => { d.shifts.unshift(s); });
+    return Promise.resolve(s);
+  }
+
+  getAttendance(filter?: AttendanceFilter): Promise<AttendanceRecord[]> {
+    let list = this.local.get().attendance;
+    if (filter?.organizationId) list = list.filter(a => a.organizationId === filter.organizationId);
+    if (filter?.workerId) list = list.filter(a => a.workerId === filter.workerId);
+    if (filter?.industry) list = list.filter(a => a.industry === filter.industry);
+    if (filter?.status) list = list.filter(a => a.status === filter.status);
+    return Promise.resolve(list);
+  }
+
+  getAttendanceById(id: string): Promise<AttendanceRecord | null> {
+    return Promise.resolve(this.local.get().attendance.find(a => a.id === id) || null);
+  }
+
+  getActiveAttendance(workerId: string): Promise<AttendanceRecord | null> {
+    return Promise.resolve(this.local.get().attendance.find(a => a.workerId === workerId && a.checkOutTime === null) || null);
+  }
+
+  createAttendance(a: AttendanceRecord): Promise<AttendanceRecord> {
+    this.local.update(d => { d.attendance.unshift(a); });
+    return Promise.resolve(a);
+  }
+
   updateAttendance(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null> {
     let updated: AttendanceRecord | null = null;
     this.local.update(d => {
       const item = d.attendance.find(a => a.id === id);
-      if (item) { Object.assign(item, updates); updated = item; }
+      if (item) {
+        Object.assign(item, updates);
+        updated = item;
+      }
     });
     return Promise.resolve(updated);
   }
-  getPayslips(): Promise<Payslip[]> { return Promise.resolve(this.local.get().payslips); }
-  createPayslip(p: Payslip): Promise<Payslip> { this.local.update(d => { d.payslips.unshift(p); }); return Promise.resolve(p); }
-  getSafetyReports(): Promise<SafetyReport[]> { return Promise.resolve(this.local.get().safetyReports); }
-  createSafetyReport(s: SafetyReport): Promise<SafetyReport> { this.local.update(d => { d.safetyReports.unshift(s); }); return Promise.resolve(s); }
+
+  getPayslips(filter?: PayslipFilter): Promise<Payslip[]> {
+    let list = this.local.get().payslips;
+    if (filter?.organizationId) list = list.filter(p => p.organizationId === filter.organizationId);
+    if (filter?.workerId) list = list.filter(p => p.workerId === filter.workerId);
+    if (filter?.industry) list = list.filter(p => p.industry === filter.industry);
+    return Promise.resolve(list);
+  }
+
+  getPayslipById(id: string): Promise<Payslip | null> {
+    return Promise.resolve(this.local.get().payslips.find(p => p.id === id) || null);
+  }
+
+  createPayslip(p: Payslip): Promise<Payslip> {
+    this.local.update(d => { d.payslips.unshift(p); });
+    return Promise.resolve(p);
+  }
+
+  getSafetyReports(filter?: SafetyReportFilter): Promise<SafetyReport[]> {
+    let list = this.local.get().safetyReports;
+    if (filter?.organizationId) list = list.filter(r => r.organizationId === filter.organizationId);
+    if (filter?.industry) list = list.filter(r => r.industry === filter.industry);
+    if (filter?.status) list = list.filter(r => r.status === filter.status);
+    return Promise.resolve(list);
+  }
+
+  getSafetyReportById(id: string): Promise<SafetyReport | null> {
+    return Promise.resolve(this.local.get().safetyReports.find(r => r.id === id) || null);
+  }
+
+  createSafetyReport(s: SafetyReport): Promise<SafetyReport> {
+    this.local.update(d => { d.safetyReports.unshift(s); });
+    return Promise.resolve(s);
+  }
+
   updateSafetyReportStatus(id: string, status: string, assignedPerson?: string, resolutionNotes?: string): Promise<SafetyReport | null> {
     let updated: SafetyReport | null = null;
     this.local.update(d => {
@@ -903,10 +1020,36 @@ export class LocalDatabaseStoreAdapter implements IAsyncDatabaseStore {
     });
     return Promise.resolve(updated);
   }
-  getFeedback(): Promise<WorkplaceFeedback[]> { return Promise.resolve(this.local.get().feedback); }
-  createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback> { this.local.update(d => { d.feedback.unshift(f); }); return Promise.resolve(f); }
-  getFatigueAlerts(): Promise<FatigueAlert[]> { return Promise.resolve(this.local.get().fatigueAlerts); }
-  createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert> { this.local.update(d => { d.fatigueAlerts.unshift(fa); }); return Promise.resolve(fa); }
+
+  getFeedback(filter?: FeedbackFilter): Promise<WorkplaceFeedback[]> {
+    let list = this.local.get().feedback;
+    if (filter?.organizationId) list = list.filter(f => f.organizationId === filter.organizationId);
+    if (filter?.industry) list = list.filter(f => f.industry === filter.industry);
+    return Promise.resolve(list);
+  }
+
+  createFeedback(f: WorkplaceFeedback): Promise<WorkplaceFeedback> {
+    this.local.update(d => { d.feedback.unshift(f); });
+    return Promise.resolve(f);
+  }
+
+  getFatigueAlerts(filter?: FatigueAlertFilter): Promise<FatigueAlert[]> {
+    let list = this.local.get().fatigueAlerts;
+    if (filter?.organizationId) list = list.filter(a => a.organizationId === filter.organizationId);
+    if (filter?.industry) list = list.filter(a => a.industry === filter.industry);
+    if (filter?.status) list = list.filter(a => a.status === filter.status);
+    return Promise.resolve(list);
+  }
+
+  getFatigueAlertById(id: string): Promise<FatigueAlert | null> {
+    return Promise.resolve(this.local.get().fatigueAlerts.find(a => a.id === id) || null);
+  }
+
+  createFatigueAlert(fa: FatigueAlert): Promise<FatigueAlert> {
+    this.local.update(d => { d.fatigueAlerts.unshift(fa); });
+    return Promise.resolve(fa);
+  }
+
   resolveFatigueAlert(id: string, reviewedBy: string, reviewNotes?: string): Promise<FatigueAlert | null> {
     let updated: FatigueAlert | null = null;
     this.local.update(d => {
@@ -920,8 +1063,29 @@ export class LocalDatabaseStoreAdapter implements IAsyncDatabaseStore {
     });
     return Promise.resolve(updated);
   }
-  getSkills(): Promise<SkillPassportItem[]> { return Promise.resolve(this.local.get().skills); }
-  createSkill(sk: SkillPassportItem): Promise<SkillPassportItem> { this.local.update(d => { d.skills.unshift(sk); }); return Promise.resolve(sk); }
+
+  getSkills(filter?: SkillFilter): Promise<SkillPassportItem[]> {
+    let list = this.local.get().skills;
+    if (filter?.organizationId) {
+      const users = this.local.get().users.filter(u => u.organizationId === filter.organizationId);
+      const orgWorkerIds = new Set(users.map(u => u.id));
+      list = list.filter(s => orgWorkerIds.has(s.workerId));
+    }
+    if (filter?.workerId) {
+      list = list.filter(s => s.workerId === filter.workerId);
+    }
+    return Promise.resolve(list);
+  }
+
+  getSkillById(id: string): Promise<SkillPassportItem | null> {
+    return Promise.resolve(this.local.get().skills.find(s => s.id === id) || null);
+  }
+
+  createSkill(sk: SkillPassportItem): Promise<SkillPassportItem> {
+    this.local.update(d => { d.skills.unshift(sk); });
+    return Promise.resolve(sk);
+  }
+
   verifySkill(id: string, verifierName: string, verifierDesignation: string, certificateRef?: string): Promise<SkillPassportItem | null> {
     let updated: SkillPassportItem | null = null;
     this.local.update(d => {

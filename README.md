@@ -3,7 +3,7 @@
 > **Theme:** UN SDG 8 — Decent Work and Economic Growth  
 > **Target Industries:** Construction Sites & Healthcare Facilities
 
-[![Automated Tests](https://img.shields.io/badge/tests-20%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Automated Tests](https://img.shields.io/badge/tests-22%20passed%2C%200%20failed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/runtime-Node%20v22%20%7C%20TypeScript%20%7C%20React-blue.svg)]()
 [![Deployment](https://img.shields.io/badge/Vercel-Deployment%20Ready-black.svg)]()
 [![Database](https://img.shields.io/badge/database-Neon%20PostgreSQL%20%7C%20Live%20Persistence-brightgreen.svg)]()
@@ -83,7 +83,7 @@ The project includes unit, integration, and security tests executing natively vi
 npm test
 ```
 
-### Test Coverage Summary (20 Tests Passed, 0 Failed):
+### Test Coverage Summary (22 Tests Passed, 0 Failed):
 - ✔ GET /health returns healthy status, service name, and database mode
 - ✔ Rejects forged session tokens or altered payloads with 401 Unauthorized
 - ✔ GET /api/shifts rejects unauthenticated request without token
@@ -98,6 +98,8 @@ npm test
 - ✔ Fails safely when SESSION_SECRET is missing or default in production
 - ✔ GET /api/skills strictly prevents managers from accessing skills of workers in another organization
 - ✔ PATCH /api/skills/:id/verify prevents managers from verifying skills of workers in another organization
+- ✔ GET /api/attendance returns only records belonging to the manager organization
+- ✔ GET /api/skills without workerId parameter returns only skills belonging to workers in manager organization
 - ✔ Shift duration calculates correct regular hours for standard 8h day shift
 - ✔ Overnight shift correctly computes across midnight boundary with overtime
 - ✔ Rejects invalid checkout time that is before checkin time
@@ -105,7 +107,7 @@ npm test
 - ✔ Fatigue alert triggers when shift duration exceeds 10 hours
 - ✔ Fatigue alert triggers when rest between shifts is less than mandatory 11 hours
 
-**Result: 20 tests passed, 0 failed.**
+**Result: 22 tests passed, 0 failed.**
 
 ---
 
@@ -180,4 +182,4 @@ Check out our submission and live platform!
 - [x] **Zero Exposed Credentials:** No secrets or private keys in source
 - [x] **Database Persistence:** Real asynchronous Neon PostgreSQL queries across all 9 schema entities
 - [x] **Deployment Target:** Vercel serverless + SPA deployment configuration (`vercel.json`, `api/index.ts`)
-- [x] **Test Results:** 20 automated unit, integration, and security tests passing
+- [x] **Test Results:** 22 automated unit, integration, and security tests passing

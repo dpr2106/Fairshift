@@ -282,4 +282,34 @@ describe('FairShift REST API Integration, RBAC & Security Audit Tests', () => {
     const data = await res.json();
     assert.ok(data.error.includes('Managers cannot verify skills for workers outside their organization'));
   });
+
+  // Test 15: Database optimization check - GET /api/attendance strictly isolates by manager organization
+  test('GET /api/attendance returns only records belonging to the manager organization', async () => {
+    const res = await fetch(`${BASE_URL}/api/attendance`, {
+      headers: { 'Authorization': `Bearer ${managerToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data));
+    assert.ok(data.length > 0);
+    for (const record of data) {
+      assert.equal(record.organizationId, 'org-const-01');
+    }
+  });
+
+  // Test 16: Database optimization check - GET /api/skills without workerId strictly joins and filters by manager organization
+  test('GET /api/skills without workerId parameter returns only skills belonging to workers in manager organization', async () => {
+    const res = await fetch(`${BASE_URL}/api/skills`, {
+      headers: { 'Authorization': `Bearer ${managerToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data));
+    assert.ok(data.length > 0);
+    // Verified skills should only belong to construction workers
+    const constWorkerIds = new Set(['usr-worker-murugan', 'usr-worker-rajesh']);
+    for (const skill of data) {
+      assert.ok(constWorkerIds.has(skill.workerId));
+    }
+  });
 });

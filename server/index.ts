@@ -124,21 +124,18 @@ app.get('/api/organizations', async (req, res) => {
 // -------------------------------------------------------------
 app.get('/api/shifts', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const shifts = await dbAsync.getShifts();
   const industry = req.query.industry as string;
 
-  let filtered = shifts;
-
-  // Tenant / Organization Isolation
+  const filter: any = {};
   if (user.role !== 'admin') {
-    filtered = filtered.filter(s => s.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
-
   if (industry) {
-    filtered = filtered.filter(s => s.industry === industry);
+    filter.industry = industry;
   }
 
-  res.json(filtered);
+  const shifts = await dbAsync.getShifts(filter);
+  res.json(shifts);
 });
 
 app.post('/api/shifts', requireAuth, requireRole('manager', 'admin'), async (req: AuthenticatedRequest, res) => {
@@ -172,31 +169,31 @@ app.post('/api/shifts', requireAuth, requireRole('manager', 'admin'), async (req
 // -------------------------------------------------------------
 app.get('/api/attendance', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const records = await dbAsync.getAttendance();
   const { industry, workerId, status } = req.query;
 
-  let filtered = records;
+  const filter: any = {};
 
   // Organization-level isolation
   if (user.role !== 'admin') {
-    filtered = filtered.filter(r => r.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
 
   // Security check: workers can ONLY view their own attendance records
   if (user.role === 'worker') {
-    filtered = filtered.filter(r => r.workerId === user.id);
+    filter.workerId = user.id;
   } else if (workerId) {
-    filtered = filtered.filter(r => r.workerId === workerId);
+    filter.workerId = String(workerId);
   }
 
   if (industry) {
-    filtered = filtered.filter(r => r.industry === industry);
+    filter.industry = String(industry);
   }
 
   if (status) {
-    filtered = filtered.filter(r => r.status === status);
+    filter.status = String(status);
   }
 
+  const filtered = await dbAsync.getAttendance(filter);
   res.json(filtered);
 });
 
@@ -204,8 +201,7 @@ app.post('/api/attendance/check-in', requireAuth, async (req: AuthenticatedReque
   const user = req.user!;
   const { shiftId, qrToken, verificationMethod } = req.body;
 
-  const shifts = await dbAsync.getShifts();
-  const shift = shifts.find(s => s.id === shiftId);
+  const shift = await dbAsync.getShiftById(shiftId);
   if (!shift) {
     return res.status(404).json({ error: 'Shift not found' });
   }
@@ -216,8 +212,7 @@ app.post('/api/attendance/check-in', requireAuth, async (req: AuthenticatedReque
   }
 
   // Check if worker already has an active (unclosed) attendance record
-  const allAtt = await dbAsync.getAttendance();
-  const activeRecord = allAtt.find(r => r.workerId === user.id && r.checkOutTime === null);
+  const activeRecord = await dbAsync.getActiveAttendance(user.id);
   if (activeRecord) {
     return res.status(400).json({
       error: 'You are already checked in. Please check out of your active shift first.',
@@ -260,10 +255,9 @@ app.post('/api/attendance/check-out', requireAuth, async (req: AuthenticatedRequ
   const user = req.user!;
   const { attendanceId } = req.body;
 
-  const allAtt = await dbAsync.getAttendance();
-  const record = allAtt.find(
-    r => (attendanceId ? r.id === attendanceId : r.workerId === user.id && r.checkOutTime === null)
-  );
+  const record = attendanceId
+    ? await dbAsync.getAttendanceById(attendanceId)
+    : await dbAsync.getActiveAttendance(user.id);
 
   if (!record) {
     return res.status(404).json({ error: 'Active check-in record not found to check out from.' });
@@ -286,11 +280,13 @@ app.post('/api/attendance/check-out', requireAuth, async (req: AuthenticatedRequ
     status: 'pending' // Pending manager audit
   });
 
-  // Evaluate Fatigue Rules
+  // Evaluate Fatigue Rules against worker's previous attendance only
+  const workerHistory = await dbAsync.getAttendance({ workerId: user.id });
+  const otherRecords = workerHistory.filter(r => r.id !== record.id);
   const fatigueAlert = evaluateFatigue(
     user,
     { checkInTime: record.checkInTime, checkOutTime: now },
-    allAtt.filter(r => r.workerId === user.id && r.id !== record.id)
+    otherRecords
   );
 
   if (fatigueAlert) {
@@ -317,8 +313,7 @@ app.patch('/api/attendance/:id/status', requireAuth, requireRole('manager', 'adm
   }
 
   const paramId = String(req.params.id);
-  const allAtt = await dbAsync.getAttendance();
-  const record = allAtt.find(r => r.id === paramId);
+  const record = await dbAsync.getAttendanceById(paramId);
   if (!record) {
     return res.status(404).json({ error: 'Attendance record not found' });
   }
@@ -341,33 +336,33 @@ app.patch('/api/attendance/:id/status', requireAuth, requireRole('manager', 'adm
 // -------------------------------------------------------------
 app.get('/api/payslips', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const slips = await dbAsync.getPayslips();
   const { workerId, industry } = req.query;
 
-  let filtered = slips;
+  const filter: any = {};
 
   // Organization-level isolation
   if (user.role !== 'admin') {
-    filtered = filtered.filter(p => p.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
 
   if (user.role === 'worker') {
-    filtered = filtered.filter(p => p.workerId === user.id);
+    filter.workerId = user.id;
   } else if (workerId) {
-    filtered = filtered.filter(p => p.workerId === workerId);
+    filter.workerId = String(workerId);
   }
 
   if (industry) {
-    filtered = filtered.filter(p => p.industry === industry);
+    filter.industry = String(industry);
   }
 
+  const filtered = await dbAsync.getPayslips(filter);
   res.json(filtered);
 });
 
 app.get('/api/payslips/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const slips = await dbAsync.getPayslips();
-  const slip = slips.find(p => p.id === req.params.id);
+  const paramId = String(req.params.id);
+  const slip = await dbAsync.getPayslipById(paramId);
 
   if (!slip) {
     return res.status(404).json({ error: 'Payslip not found' });
@@ -408,14 +403,13 @@ app.post('/api/payslips/generate', requireAuth, async (req: AuthenticatedRequest
   const periodStart = req.body.periodStart || '2026-10-01';
   const periodEnd = req.body.periodEnd || '2026-10-27';
 
-  // Find organization payroll configuration
-  const organizations = await dbAsync.getOrganizations();
-  const org = organizations.find(o => o.id === worker.organizationId);
+  // Find organization payroll configuration directly by ID
+  const org = await dbAsync.getOrganizationById(worker.organizationId);
   const customConfig = org?.config?.payrollConfig;
 
-  // Find attendance in range
-  const allAtt = await dbAsync.getAttendance();
-  const records = allAtt.filter(r => r.workerId === targetWorkerId && r.checkOutTime !== null);
+  // Find attendance in range for this worker only
+  const workerAttendance = await dbAsync.getAttendance({ workerId: targetWorkerId });
+  const records = workerAttendance.filter(r => r.checkOutTime !== null);
 
   const breakdown = calculatePayslipBreakdown(worker, records, periodStart, periodEnd, '₹', customConfig);
   const newPayslip = {
@@ -433,26 +427,27 @@ app.post('/api/payslips/generate', requireAuth, async (req: AuthenticatedRequest
 // -------------------------------------------------------------
 app.get('/api/safety', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const reports = await dbAsync.getSafetyReports();
   const { industry, status } = req.query;
 
-  let filtered = reports;
+  const filter: any = {};
 
   // Organization boundary isolation
   if (user.role !== 'admin') {
-    filtered = filtered.filter(r => r.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
 
   if (industry) {
-    filtered = filtered.filter(r => r.industry === industry);
+    filter.industry = String(industry);
   }
   if (status) {
-    filtered = filtered.filter(r => r.status === status);
+    filter.status = String(status);
   }
+
+  const reports = await dbAsync.getSafetyReports(filter);
 
   // PRIVACY RULE: If report was filed anonymously,
   // sanitize workerId and real identity completely.
-  const sanitized = filtered.map(r => {
+  const sanitized = reports.map(r => {
     if (r.reporterMode === 'anonymous') {
       const { workerId, ...rest } = r;
       return {
@@ -505,8 +500,8 @@ app.post('/api/safety', requireAuth, async (req: AuthenticatedRequest, res) => {
 app.patch('/api/safety/:id/status', requireAuth, requireRole('manager', 'admin'), async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   const { status, assignedPerson, resolutionNotes } = req.body;
-  const reports = await dbAsync.getSafetyReports();
-  const report = reports.find(r => r.id === req.params.id);
+  const paramId = String(req.params.id);
+  const report = await dbAsync.getSafetyReportById(paramId);
 
   if (!report) {
     return res.status(404).json({ error: 'Safety report not found' });
@@ -517,7 +512,6 @@ app.patch('/api/safety/:id/status', requireAuth, requireRole('manager', 'admin')
     return res.status(403).json({ error: 'Cannot modify safety reports belonging to another organization' });
   }
 
-  const paramId = String(req.params.id);
   const updated = await dbAsync.updateSafetyReportStatus(paramId, status, assignedPerson, resolutionNotes);
   res.json({ message: 'Safety report updated successfully', report: updated || report });
 });
@@ -527,21 +521,20 @@ app.patch('/api/safety/:id/status', requireAuth, requireRole('manager', 'admin')
 // -------------------------------------------------------------
 app.get('/api/feedback', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const allFeedback = await dbAsync.getFeedback();
   const { industry } = req.query;
 
-  // STRICT PRIVACY PROTECTION:
-  // Workplace feedback does NOT store workerId.
-  let items = allFeedback;
+  const filter: any = {};
 
   // Organization-level isolation
   if (user.role !== 'admin') {
-    items = items.filter(f => f.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
 
   if (industry) {
-    items = items.filter(f => f.industry === industry);
+    filter.industry = String(industry);
   }
+
+  const items = await dbAsync.getFeedback(filter);
 
   // Aggregate metrics
   const total = items.length;
@@ -589,31 +582,31 @@ app.post('/api/feedback', requireAuth, async (req: AuthenticatedRequest, res) =>
 // -------------------------------------------------------------
 app.get('/api/fatigue', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const alerts = await dbAsync.getFatigueAlerts();
   const { industry, status } = req.query;
 
-  let filtered = alerts;
+  const filter: any = {};
 
   // Organization boundary isolation
   if (user.role !== 'admin') {
-    filtered = filtered.filter(a => a.organizationId === user.organizationId);
+    filter.organizationId = user.organizationId;
   }
 
   if (industry) {
-    filtered = filtered.filter(a => a.industry === industry);
+    filter.industry = String(industry);
   }
   if (status) {
-    filtered = filtered.filter(a => a.status === status);
+    filter.status = String(status);
   }
 
+  const filtered = await dbAsync.getFatigueAlerts(filter);
   res.json(filtered);
 });
 
 app.patch('/api/fatigue/:id/review', requireAuth, requireRole('manager', 'admin'), async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   const { reviewNotes } = req.body;
-  const alerts = await dbAsync.getFatigueAlerts();
-  const alert = alerts.find(a => a.id === req.params.id);
+  const paramId = String(req.params.id);
+  const alert = await dbAsync.getFatigueAlertById(paramId);
 
   if (!alert) {
     return res.status(404).json({ error: 'Fatigue alert not found' });
@@ -624,7 +617,6 @@ app.patch('/api/fatigue/:id/review', requireAuth, requireRole('manager', 'admin'
     return res.status(403).json({ error: 'Cannot review fatigue alerts belonging to another organization' });
   }
 
-  const paramId = String(req.params.id);
   const updated = await dbAsync.resolveFatigueAlert(paramId, user.name, reviewNotes);
   res.json({ message: 'Fatigue alert marked reviewed', alert: updated || alert });
 });
@@ -635,14 +627,13 @@ app.patch('/api/fatigue/:id/review', requireAuth, requireRole('manager', 'admin'
 app.get('/api/skills', requireAuth, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   const targetWorkerId = (req.query.workerId as string) || (user.role === 'worker' ? user.id : undefined);
-  const skills = await dbAsync.getSkills();
 
   // 1. Worker Role: can only view their own skills
   if (user.role === 'worker') {
     if (targetWorkerId && targetWorkerId !== user.id) {
       return res.status(403).json({ error: 'Access denied: Workers can only view their own skill records.' });
     }
-    const userSkills = skills.filter(s => s.workerId === user.id);
+    const userSkills = await dbAsync.getSkills({ workerId: user.id });
     return res.json(userSkills);
   }
 
@@ -658,24 +649,23 @@ app.get('/api/skills', requireAuth, async (req: AuthenticatedRequest, res) => {
           error: 'Access denied: Managers cannot access skill records of workers belonging to another organization.'
         });
       }
-      const workerSkills = skills.filter(s => s.workerId === targetWorkerId);
+      const workerSkills = await dbAsync.getSkills({ workerId: targetWorkerId, organizationId: user.organizationId });
       return res.json(workerSkills);
     }
 
-    // Unspecified workerId: return skills strictly for workers in the manager's organization
-    const users = await dbAsync.getUsers();
-    const orgWorkerIds = new Set(users.filter(u => u.organizationId === user.organizationId).map(u => u.id));
-    const orgSkills = skills.filter(s => orgWorkerIds.has(s.workerId));
+    // Unspecified workerId: return skills strictly for workers in the manager's organization (SQL JOIN with users table)
+    const orgSkills = await dbAsync.getSkills({ organizationId: user.organizationId });
     return res.json(orgSkills);
   }
 
   // 3. Admin Role: system-wide visibility
   if (targetWorkerId) {
-    const adminSkills = skills.filter(s => s.workerId === targetWorkerId);
+    const adminSkills = await dbAsync.getSkills({ workerId: targetWorkerId });
     return res.json(adminSkills);
   }
 
-  res.json(skills);
+  const allSkills = await dbAsync.getSkills();
+  res.json(allSkills);
 });
 
 app.post('/api/skills', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -703,8 +693,8 @@ app.post('/api/skills', requireAuth, async (req: AuthenticatedRequest, res) => {
 app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin'), async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   const { certificateRef } = req.body;
-  const skills = await dbAsync.getSkills();
-  const skill = skills.find(s => s.id === req.params.id);
+  const paramId = String(req.params.id);
+  const skill = await dbAsync.getSkillById(paramId);
 
   if (!skill) {
     return res.status(404).json({ error: 'Skill entry not found' });
@@ -720,7 +710,6 @@ app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin')
     }
   }
 
-  const paramId = String(req.params.id);
   const verified = await dbAsync.verifySkill(paramId, user.name, user.designation, certificateRef);
   res.json({ message: 'Skill successfully verified', skill: verified || skill });
 });
