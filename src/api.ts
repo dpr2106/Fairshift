@@ -14,6 +14,7 @@ const API_BASE = '/api';
 
 class ApiService {
   private currentUserId: string = 'usr-worker-murugan';
+  private sessionToken: string | null = null;
 
   public setUserId(id: string) {
     this.currentUserId = id;
@@ -28,11 +29,25 @@ class ApiService {
     return this.currentUserId;
   }
 
+  public setToken(token: string) {
+    this.sessionToken = token;
+    localStorage.setItem('fairshift_token', token);
+  }
+
+  public getToken(): string | null {
+    if (!this.sessionToken) {
+      this.sessionToken = localStorage.getItem('fairshift_token');
+    }
+    return this.sessionToken;
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const headers = {
+    const token = this.getToken();
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-user-id': this.getUserId(),
-      ...(options.headers || {})
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...((options.headers as Record<string, string>) || {})
     };
 
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -55,7 +70,23 @@ class ApiService {
   }
 
   // Auth & Personas
+  async login(userId: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ userId })
+    });
+    this.setToken(res.token);
+    this.setUserId(res.user.id);
+    return res;
+  }
+
   async getCurrentUser(): Promise<User> {
+    const token = this.getToken();
+    if (!token) {
+      // Auto-login default persona to acquire verified token
+      const loginRes = await this.login(this.getUserId());
+      return loginRes.user;
+    }
     return this.request<User>('/auth/me');
   }
 

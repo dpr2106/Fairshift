@@ -1,4 +1,4 @@
-import { AttendanceRecord, Payslip, PayslipLineItem, User, FatigueAlert } from '../types.js';
+import { AttendanceRecord, Payslip, PayslipLineItem, User, FatigueAlert, PayrollConfig } from '../types.js';
 
 export interface ShiftHoursResult {
   durationHours: number;
@@ -46,14 +46,16 @@ export function calculateShiftHours(
 
 /**
  * Calculates a mathematically transparent payslip breakdown
- * for a worker given attendance records and wage configuration.
+ * for a worker given attendance records and configurable organization wage parameters.
+ * Note: Calculations are generated as estimates and labeled as illustrative breakdowns.
  */
 export function calculatePayslipBreakdown(
   worker: User,
   records: AttendanceRecord[],
   periodStart: string,
   periodEnd: string,
-  currency: string = '₹'
+  currency: string = '₹',
+  customConfig?: Partial<PayrollConfig>
 ): Omit<Payslip, 'id'> {
   // Aggregate hours
   let totalRegularHours = 0;
@@ -67,24 +69,26 @@ export function calculatePayslipBreakdown(
   totalRegularHours = Math.round(totalRegularHours * 100) / 100;
   totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
 
+  // Configurable rates (defaulting to standard configurable organizational presets)
+  const multiplier = customConfig?.overtimeMultiplier ?? worker.overtimeRateMultiplier ?? 1.5;
+  const epfRate = customConfig?.epfRate ?? 0.12; // 12% basic
+  const esicRate = customConfig?.esicRate ?? 0.0075; // 0.75% gross
+  const welfareRate = customConfig?.welfareCessRate ?? (worker.industry === 'construction' ? 0.01 : 0.0);
+  const welfareFlatFee = customConfig?.welfareFlatFee ?? (worker.industry === 'healthcare' ? 100 : 0);
+
   const regularRate = worker.hourlyRate;
-  const overtimeRate = Math.round(worker.hourlyRate * worker.overtimeRateMultiplier * 100) / 100;
+  const overtimeRate = Math.round(worker.hourlyRate * multiplier * 100) / 100;
 
   const baseEarnings = Math.round(totalRegularHours * regularRate * 100) / 100;
   const overtimeEarnings = Math.round(totalOvertimeHours * overtimeRate * 100) / 100;
   const grossPay = Math.round((baseEarnings + overtimeEarnings) * 100) / 100;
 
-  // Transparent Statutory / Standard Deductions:
-  // 1. EPF (Employee Provident Fund) = 12% of basic earnings
-  const epfDeduction = Math.round(baseEarnings * 0.12 * 100) / 100;
-  // 2. ESIC (Employees' State Insurance Corporation) = 0.75% of gross earnings
-  const esicDeduction = Math.round(grossPay * 0.0075 * 100) / 100;
-  // 3. Worker Welfare Cess = 1% for construction, nominal ₹100 for healthcare
-  const welfareCess = worker.industry === 'construction'
-    ? Math.round(grossPay * 0.01 * 100) / 100
-    : 100;
+  // Configurable Deductions Breakdown:
+  const epfDeduction = Math.round(baseEarnings * epfRate * 100) / 100;
+  const esicDeduction = Math.round(grossPay * esicRate * 100) / 100;
+  const welfareDeduction = Math.round((grossPay * welfareRate + welfareFlatFee) * 100) / 100;
 
-  const totalDeductions = Math.round((epfDeduction + esicDeduction + welfareCess) * 100) / 100;
+  const totalDeductions = Math.round((epfDeduction + esicDeduction + welfareDeduction) * 100) / 100;
   const netPay = Math.round((grossPay - totalDeductions) * 100) / 100;
 
   const lineItems: PayslipLineItem[] = [
@@ -98,35 +102,39 @@ export function calculatePayslipBreakdown(
     },
     {
       id: 'li-ot',
-      label: `Overtime Pay (${worker.overtimeRateMultiplier}x statutory multiplier)`,
+      label: `Overtime Pay (${multiplier}x configured rate)`,
       type: 'earning',
       amount: overtimeEarnings,
       formula: `${totalOvertimeHours.toFixed(1)} hrs × ${currency}${overtimeRate.toFixed(2)}/hr`,
-      detail: `Premium rate applied to all hours worked beyond the daily threshold.`
+      detail: `Configured multiplier applied to hours worked beyond daily standard threshold.`
     },
     {
       id: 'li-epf',
-      label: 'Employee Provident Fund (EPF 12%)',
+      label: `Provident Fund (EPF - Configured ${(epfRate * 100).toFixed(0)}% estimate)`,
       type: 'deduction',
       amount: epfDeduction,
-      formula: `12% × ${currency}${baseEarnings.toFixed(2)} (Basic)`,
-      detail: 'Mandatory social security retirement savings deposited to EPFO.'
+      formula: `${(epfRate * 100).toFixed(0)}% × ${currency}${baseEarnings.toFixed(2)} (Basic)`,
+      detail: 'Organizational retirement corpus deduction estimate. Final remittance subject to payroll audit.'
     },
     {
       id: 'li-esic',
-      label: 'ESIC Health & Disability Insurance (0.75%)',
+      label: `Healthcare Cover (ESIC - Configured ${(esicRate * 100).toFixed(2)}% estimate)`,
       type: 'deduction',
       amount: esicDeduction,
-      formula: `0.75% × ${currency}${grossPay.toFixed(2)} (Gross)`,
-      detail: 'State-backed full cashless health and workplace injury coverage.'
+      formula: `${(esicRate * 100).toFixed(2)}% × ${currency}${grossPay.toFixed(2)} (Gross)`,
+      detail: 'Organizational health insurance contribution estimate.'
     },
     {
       id: 'li-welfare',
-      label: worker.industry === 'construction' ? 'BOCW Construction Welfare Fund (1%)' : 'Hospital Welfare & Mutual Fund',
+      label: worker.industry === 'construction'
+        ? `Worker Welfare Fund (Configured ${(welfareRate * 100).toFixed(0)}% estimate)`
+        : 'Hospital Welfare & Mutual Fund (Configured estimate)',
       type: 'deduction',
-      amount: welfareCess,
-      formula: worker.industry === 'construction' ? `1.0% × ${currency}${grossPay.toFixed(2)}` : 'Standard welfare fee',
-      detail: 'Statutory board contribution for worker safety and social assistance.'
+      amount: welfareDeduction,
+      formula: worker.industry === 'construction'
+        ? `${(welfareRate * 100).toFixed(1)}% × ${currency}${grossPay.toFixed(2)}`
+        : `Flat fee ${currency}${welfareFlatFee}`,
+      detail: 'Configured organizational welfare contribution. Does not constitute statutory certification.'
     }
   ];
 
@@ -145,7 +153,7 @@ export function calculatePayslipBreakdown(
     totalDeductions,
     netPay,
     currency,
-    status: 'approved',
+    status: 'estimate', // Clearly labeled as estimate until manager audits & signs off
     lineItems,
     generatedAt: new Date().toISOString()
   };
@@ -175,7 +183,7 @@ export function evaluateFatigue(
       industry: worker.industry,
       triggerType: 'excessive_hours',
       metricValue: `${currentDuration.toFixed(1)} consecutive hours logged`,
-      explanation: `Shift duration exceeded the ${maxDailyHours}-hour safe threshold. Extended work poses acute fatigue and reflex degradation risk.`,
+      explanation: `Shift duration exceeded the ${maxDailyHours}-hour safe threshold. Flagged for manager review to ensure worker well-being.`,
       severity: currentDuration >= 13 ? 'high' : 'moderate',
       status: 'active'
     };
@@ -201,7 +209,7 @@ export function evaluateFatigue(
         industry: worker.industry,
         triggerType: 'insufficient_rest',
         metricValue: `${restIntervalHours.toFixed(1)} hours rest between shifts`,
-        explanation: `Rest gap of only ${restIntervalHours.toFixed(1)} hours is less than the mandatory ${minRestHours}-hour recovery window. Human review required before next shift assignment.`,
+        explanation: `Rest gap of only ${restIntervalHours.toFixed(1)} hours is less than the recommended ${minRestHours}-hour recovery window. Human manager review required.`,
         severity: restIntervalHours < 8 ? 'high' : 'moderate',
         status: 'active'
       };

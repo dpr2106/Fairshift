@@ -15,6 +15,15 @@ export interface User {
   overtimeRateMultiplier: number;
 }
 
+export interface PayrollConfig {
+  overtimeMultiplier: number;
+  epfRate: number;
+  esicRate: number;
+  welfareCessRate: number;
+  welfareFlatFee: number;
+  labelNote: string;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -27,6 +36,7 @@ export interface Organization {
     hazardCategories: string[];
     roles: string[];
     currencySymbol: string;
+    payrollConfig: PayrollConfig;
   };
 }
 

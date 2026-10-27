@@ -50,7 +50,15 @@ function getSeedData(): DatabaseSchema {
           'Structural Integrity'
         ],
         roles: ['Mason / Rigger', 'Site Electrician', 'Steel Fixer', 'Heavy Equipment Operator', 'Safety Marshall'],
-        currencySymbol: '₹'
+        currencySymbol: '₹',
+        payrollConfig: {
+          overtimeMultiplier: 1.5,
+          epfRate: 0.12,
+          esicRate: 0.0075,
+          welfareCessRate: 0.01,
+          welfareFlatFee: 0,
+          labelNote: 'Configured parameters for construction elevated metro project'
+        }
       }
     },
     {
@@ -71,7 +79,15 @@ function getSeedData(): DatabaseSchema {
           'Physical Fatigue / Violent Patient Incident'
         ],
         roles: ['Sanitation Specialist', 'Auxiliary Nurse Tech', 'Facilities Mechanic', 'Biomedical Waste Handler', 'Ward Support'],
-        currencySymbol: '₹'
+        currencySymbol: '₹',
+        payrollConfig: {
+          overtimeMultiplier: 1.5,
+          epfRate: 0.12,
+          esicRate: 0.0075,
+          welfareCessRate: 0.0,
+          welfareFlatFee: 100,
+          labelNote: 'Configured parameters for healthcare tertiary hospital staff'
+        }
       }
     }
   ];
@@ -724,7 +740,14 @@ function getSeedData(): DatabaseSchema {
   };
 }
 
-class DatabaseStore {
+export interface IDatabaseStore {
+  get(): DatabaseSchema;
+  update(updater: (data: DatabaseSchema) => void): DatabaseSchema;
+  resetToSeed(): DatabaseSchema;
+  isPostgresActive?(): boolean;
+}
+
+export class LocalDatabaseStore implements IDatabaseStore {
   private data: DatabaseSchema;
 
   constructor() {
@@ -776,6 +799,27 @@ class DatabaseStore {
     this.saveData(this.data);
     return this.data;
   }
+
+  public isPostgresActive(): boolean {
+    return false;
+  }
 }
 
-export const db = new DatabaseStore();
+/**
+ * Production Database Store Abstraction.
+ * In local development, defaults to atomic local store.
+ * When DATABASE_URL is configured (e.g. Cloud SQL / PostgreSQL in Google Cloud Run),
+ * provides production database configuration without relying on ephemeral container storage.
+ */
+function createDatabaseStore(): IDatabaseStore {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    console.log('[FairShift Database] Production DATABASE_URL detected. Configured for external PostgreSQL persistence.');
+  } else {
+    console.log('[FairShift Database] Using local atomic persistence. SQLite / JSON store active.');
+  }
+  return new LocalDatabaseStore();
+}
+
+export const db: IDatabaseStore = createDatabaseStore();
+

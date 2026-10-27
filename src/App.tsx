@@ -40,21 +40,29 @@ export const App: React.FC = () => {
   }, []);
 
   // Persona Switch Handler
-  const handleSelectUser = (user: User) => {
-    api.setUserId(user.id);
-    setCurrentUser(user);
-    setCurrentIndustry(user.industry);
-    setViewMode(user.role === 'worker' ? 'worker' : 'employer');
+  const handleSelectUser = async (user: User) => {
+    try {
+      await api.login(user.id);
+      setCurrentUser(user);
+      setCurrentIndustry(user.industry);
+      setViewMode(user.role === 'worker' ? 'worker' : 'employer');
+    } catch (err) {
+      console.error('Error switching user persona:', err);
+    }
   };
 
   // Industry Switch Handler
-  const handleSelectIndustry = (ind: Industry) => {
+  const handleSelectIndustry = async (ind: Industry) => {
     setCurrentIndustry(ind);
     // Find first user matching that industry
     const match = users.find((u) => u.industry === ind && (viewMode === 'worker' ? u.role === 'worker' : u.role !== 'worker'));
     if (match) {
-      api.setUserId(match.id);
-      setCurrentUser(match);
+      try {
+        await api.login(match.id);
+        setCurrentUser(match);
+      } catch (err) {
+        console.error('Error switching industry persona:', err);
+      }
     }
   };
 

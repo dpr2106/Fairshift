@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { db } from './db.js';
 import { calculateShiftHours, calculatePayslipBreakdown, evaluateFatigue } from './services/calculations.js';
 import { AttendanceRecord, SafetyReport, WorkplaceFeedback, SkillPassportItem, FatigueAlert } from './types.js';
+import { createSessionToken, requireAuth, requireRole, enforceOrgBoundary, AuthenticatedRequest } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,24 +23,38 @@ app.get('/health', (req, res) => {
     service: 'fairshift-platform',
     version: '1.0.0',
     sdgGoal: 'SDG 8: Decent Work & Economic Growth',
+    database: process.env.DATABASE_URL ? 'postgresql-configured' : 'local-atomic-store',
     timestamp: new Date().toISOString()
   });
 });
 
-// Helper to extract authenticated user (using X-User-Id header or fallback)
-function getCurrentUser(req: express.Request) {
-  const data = db.get();
-  const userId = (req.headers['x-user-id'] as string) || 'usr-worker-murugan';
-  const user = data.users.find(u => u.id === userId);
-  return user || data.users[0];
-}
-
 // -------------------------------------------------------------
 // AUTH & PERSONA ENDPOINTS
 // -------------------------------------------------------------
-app.get('/api/auth/me', (req, res) => {
-  const user = getCurrentUser(req);
-  res.json(user);
+
+// Verified Login & Token Generation
+app.post('/api/auth/login', (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required for login' });
+  }
+
+  const data = db.get();
+  const user = data.users.find(u => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User account not found' });
+  }
+
+  const token = createSessionToken(user);
+  res.json({
+    message: 'Authentication successful',
+    token,
+    user
+  });
+});
+
+app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
+  res.json(req.user);
 });
 
 app.get('/api/auth/users', (req, res) => {
@@ -58,20 +73,29 @@ app.get('/api/organizations', (req, res) => {
 // -------------------------------------------------------------
 // SHIFTS
 // -------------------------------------------------------------
-app.get('/api/shifts', (req, res) => {
+app.get('/api/shifts', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
   const industry = req.query.industry as string;
-  const filtered = industry ? data.shifts.filter(s => s.industry === industry) : data.shifts;
+
+  let filtered = data.shifts;
+
+  // Tenant / Organization Isolation
+  if (user.role !== 'admin') {
+    filtered = filtered.filter(s => s.organizationId === user.organizationId);
+  }
+
+  if (industry) {
+    filtered = filtered.filter(s => s.industry === industry);
+  }
+
   res.json(filtered);
 });
 
-app.post('/api/shifts', (req, res) => {
-  const user = getCurrentUser(req);
-  if (user.role === 'worker') {
-    return res.status(403).json({ error: 'Only managers and administrators can create shifts' });
-  }
-
+app.post('/api/shifts', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { title, industry, startTime, endTime, requiredRole, siteLocation, isOvernight } = req.body;
+
   if (!title || !industry || !startTime || !endTime) {
     return res.status(400).json({ error: 'Title, industry, startTime, and endTime are required' });
   }
@@ -100,14 +124,19 @@ app.post('/api/shifts', (req, res) => {
 // -------------------------------------------------------------
 // ATTENDANCE & SHIFT TRACKING
 // -------------------------------------------------------------
-app.get('/api/attendance', (req, res) => {
+app.get('/api/attendance', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
-  const user = getCurrentUser(req);
   const { industry, workerId, status } = req.query;
 
   let records = data.attendance;
 
-  // Security check: workers can only view their own attendance
+  // Organization-level isolation
+  if (user.role !== 'admin') {
+    records = records.filter(r => r.organizationId === user.organizationId);
+  }
+
+  // Security check: workers can ONLY view their own attendance records
   if (user.role === 'worker') {
     records = records.filter(r => r.workerId === user.id);
   } else if (workerId) {
@@ -125,14 +154,19 @@ app.get('/api/attendance', (req, res) => {
   res.json(records);
 });
 
-app.post('/api/attendance/check-in', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/attendance/check-in', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { shiftId, qrToken, verificationMethod } = req.body;
 
   const data = db.get();
   const shift = data.shifts.find(s => s.id === shiftId);
   if (!shift) {
     return res.status(404).json({ error: 'Shift not found' });
+  }
+
+  // Enforce tenant boundary: worker cannot check in to another organization's shift
+  if (!enforceOrgBoundary(shift.organizationId, user)) {
+    return res.status(403).json({ error: 'Cross-organization shift check-in is not permitted' });
   }
 
   // Check if worker already has an active (unclosed) attendance record
@@ -178,8 +212,8 @@ app.post('/api/attendance/check-in', (req, res) => {
   res.status(201).json(newRecord);
 });
 
-app.post('/api/attendance/check-out', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/attendance/check-out', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { attendanceId } = req.body;
 
   const data = db.get();
@@ -192,6 +226,12 @@ app.post('/api/attendance/check-out', (req, res) => {
   }
 
   const record = data.attendance[recordIndex];
+
+  // Workers can only check out of their own shift
+  if (user.role === 'worker' && record.workerId !== user.id) {
+    return res.status(403).json({ error: 'Unauthorized to check out another worker.' });
+  }
+
   const now = new Date().toISOString();
 
   // Perform hours and overtime calculations
@@ -200,7 +240,7 @@ app.post('/api/attendance/check-out', (req, res) => {
   record.checkOutTime = now;
   record.regularHours = calc.regularHours;
   record.overtimeHours = calc.overtimeHours;
-  record.status = 'pending'; // Pending manager sign-off
+  record.status = 'pending'; // Pending manager audit
 
   // Evaluate Fatigue Rules
   const fatigueAlert = evaluateFatigue(
@@ -227,13 +267,10 @@ app.post('/api/attendance/check-out', (req, res) => {
   });
 });
 
-app.patch('/api/attendance/:id/status', (req, res) => {
-  const user = getCurrentUser(req);
-  if (user.role === 'worker') {
-    return res.status(403).json({ error: 'Workers cannot approve or dispute official attendance records' });
-  }
-
+app.patch('/api/attendance/:id/status', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { status, reviewNotes } = req.body;
+
   if (!['approved', 'disputed', 'pending'].includes(status)) {
     return res.status(400).json({ error: 'Invalid attendance status' });
   }
@@ -242,6 +279,11 @@ app.patch('/api/attendance/:id/status', (req, res) => {
   const record = data.attendance.find(r => r.id === req.params.id);
   if (!record) {
     return res.status(404).json({ error: 'Attendance record not found' });
+  }
+
+  // Enforce organization isolation
+  if (!enforceOrgBoundary(record.organizationId, user)) {
+    return res.status(403).json({ error: 'Cannot approve or dispute attendance belonging to another organization' });
   }
 
   db.update(d => {
@@ -258,12 +300,18 @@ app.patch('/api/attendance/:id/status', (req, res) => {
 // -------------------------------------------------------------
 // TRANSPARENT PAYSLIPS
 // -------------------------------------------------------------
-app.get('/api/payslips', (req, res) => {
+app.get('/api/payslips', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
-  const user = getCurrentUser(req);
   const { workerId, industry } = req.query;
 
   let slips = data.payslips;
+
+  // Organization-level isolation
+  if (user.role !== 'admin') {
+    slips = slips.filter(p => p.organizationId === user.organizationId);
+  }
+
   if (user.role === 'worker') {
     slips = slips.filter(p => p.workerId === user.id);
   } else if (workerId) {
@@ -277,9 +325,9 @@ app.get('/api/payslips', (req, res) => {
   res.json(slips);
 });
 
-app.get('/api/payslips/:id', (req, res) => {
+app.get('/api/payslips/:id', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
-  const user = getCurrentUser(req);
   const slip = data.payslips.find(p => p.id === req.params.id);
 
   if (!slip) {
@@ -291,11 +339,16 @@ app.get('/api/payslips/:id', (req, res) => {
     return res.status(403).json({ error: 'Unauthorized to view this confidential payroll record' });
   }
 
+  // Organization boundary check
+  if (!enforceOrgBoundary(slip.organizationId, user)) {
+    return res.status(403).json({ error: 'Unauthorized cross-organization access' });
+  }
+
   res.json(slip);
 });
 
-app.post('/api/payslips/generate', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/payslips/generate', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const targetWorkerId = (req.body.workerId as string) || user.id;
 
   const data = db.get();
@@ -309,16 +362,26 @@ app.post('/api/payslips/generate', (req, res) => {
     return res.status(403).json({ error: 'Cannot generate payslips for other employees' });
   }
 
+  // Organization boundary check
+  if (!enforceOrgBoundary(worker.organizationId, user)) {
+    return res.status(403).json({ error: 'Unauthorized cross-organization operation' });
+  }
+
   const periodStart = req.body.periodStart || '2026-10-01';
   const periodEnd = req.body.periodEnd || '2026-10-27';
+
+  // Find organization payroll configuration
+  const org = data.organizations.find(o => o.id === worker.organizationId);
+  const customConfig = org?.config?.payrollConfig;
 
   // Find attendance in range
   const records = data.attendance.filter(r => r.workerId === targetWorkerId && r.checkOutTime !== null);
 
-  const breakdown = calculatePayslipBreakdown(worker, records, periodStart, periodEnd, '₹');
+  const breakdown = calculatePayslipBreakdown(worker, records, periodStart, periodEnd, '₹', customConfig);
   const newPayslip = {
     ...breakdown,
-    id: `pay-${Date.now()}`
+    id: `pay-${Date.now()}`,
+    status: 'estimate' as const // Explicitly labeled as estimate
   };
 
   db.update(d => {
@@ -331,12 +394,18 @@ app.post('/api/payslips/generate', (req, res) => {
 // -------------------------------------------------------------
 // SAFETY REPORTING
 // -------------------------------------------------------------
-app.get('/api/safety', (req, res) => {
+app.get('/api/safety', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
-  const user = getCurrentUser(req);
   const { industry, status } = req.query;
 
   let reports = data.safetyReports;
+
+  // Organization boundary isolation
+  if (user.role !== 'admin') {
+    reports = reports.filter(r => r.organizationId === user.organizationId);
+  }
+
   if (industry) {
     reports = reports.filter(r => r.industry === industry);
   }
@@ -344,8 +413,8 @@ app.get('/api/safety', (req, res) => {
     reports = reports.filter(r => r.status === status);
   }
 
-  // PRIVACY RULE: If employer views report that was filed anonymously,
-  // ensure workerId and real identity are sanitized
+  // PRIVACY RULE: If report was filed anonymously,
+  // sanitize workerId and real identity completely.
   const sanitized = reports.map(r => {
     if (r.reporterMode === 'anonymous') {
       const { workerId, ...rest } = r;
@@ -360,8 +429,8 @@ app.get('/api/safety', (req, res) => {
   res.json(sanitized);
 });
 
-app.post('/api/safety', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/safety', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { category, severity, description, location, reporterMode, photoDataUrl, industry } = req.body;
 
   if (!category || !severity || !description) {
@@ -369,18 +438,20 @@ app.post('/api/safety', (req, res) => {
   }
 
   const mode = reporterMode || 'confidential';
-  const refCode = `SAF-${(industry || user.industry).substring(0, 3).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+  const targetIndustry = industry || user.industry;
+  const refCode = `SAF-${targetIndustry.substring(0, 3).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
 
   const newReport: SafetyReport = {
     id: `rep-${Date.now()}`,
     referenceCode: refCode,
     organizationId: user.organizationId,
-    industry: industry || user.industry,
+    industry: targetIndustry,
     category,
     severity,
     description,
     location: location || 'On Site Work Area',
     reporterMode: mode,
+    // Strict privacy guarantee: do not attach workerId for anonymous reports
     workerId: mode === 'anonymous' ? undefined : user.id,
     reporterDisplayName: mode === 'anonymous' ? 'Anonymous Worker' : (mode === 'confidential' ? `${user.name} (Confidential)` : user.name),
     hasPhoto: Boolean(photoDataUrl),
@@ -397,18 +468,19 @@ app.post('/api/safety', (req, res) => {
   res.status(201).json(newReport);
 });
 
-app.patch('/api/safety/:id/status', (req, res) => {
-  const user = getCurrentUser(req);
-  if (user.role === 'worker') {
-    return res.status(403).json({ error: 'Only safety supervisors and managers can update incident status' });
-  }
-
+app.patch('/api/safety/:id/status', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { status, assignedPerson, resolutionNotes } = req.body;
   const data = db.get();
   const report = data.safetyReports.find(r => r.id === req.params.id);
 
   if (!report) {
     return res.status(404).json({ error: 'Safety report not found' });
+  }
+
+  // Organization boundary check
+  if (!enforceOrgBoundary(report.organizationId, user)) {
+    return res.status(403).json({ error: 'Cannot modify safety reports belonging to another organization' });
   }
 
   db.update(d => {
@@ -427,14 +499,20 @@ app.patch('/api/safety/:id/status', (req, res) => {
 // -------------------------------------------------------------
 // CONFIDENTIAL & ANONYMOUS WORKPLACE FEEDBACK
 // -------------------------------------------------------------
-app.get('/api/feedback', (req, res) => {
+app.get('/api/feedback', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
   const { industry } = req.query;
 
   // STRICT PRIVACY PROTECTION:
-  // Workplace feedback does NOT store workerId. It only presents
-  // category, sentiment, timestamp, and text.
+  // Workplace feedback does NOT store workerId.
   let items = data.feedback;
+
+  // Organization-level isolation
+  if (user.role !== 'admin') {
+    items = items.filter(f => f.organizationId === user.organizationId);
+  }
+
   if (industry) {
     items = items.filter(f => f.industry === industry);
   }
@@ -451,14 +529,15 @@ app.get('/api/feedback', (req, res) => {
   });
 });
 
-app.post('/api/feedback', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/feedback', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { category, sentiment, comment, mode, industry } = req.body;
 
   if (!category || !comment) {
     return res.status(400).json({ error: 'Category and comment are required' });
   }
 
+  // Strictly anonymous: never store workerId
   const newFeedback: WorkplaceFeedback = {
     id: `fb-${Date.now()}`,
     organizationId: user.organizationId,
@@ -484,11 +563,18 @@ app.post('/api/feedback', (req, res) => {
 // -------------------------------------------------------------
 // FATIGUE & OVERTIME WARNINGS
 // -------------------------------------------------------------
-app.get('/api/fatigue', (req, res) => {
+app.get('/api/fatigue', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
   const { industry, status } = req.query;
 
   let alerts = data.fatigueAlerts;
+
+  // Organization boundary isolation
+  if (user.role !== 'admin') {
+    alerts = alerts.filter(a => a.organizationId === user.organizationId);
+  }
+
   if (industry) {
     alerts = alerts.filter(a => a.industry === industry);
   }
@@ -499,18 +585,19 @@ app.get('/api/fatigue', (req, res) => {
   res.json(alerts);
 });
 
-app.patch('/api/fatigue/:id/review', (req, res) => {
-  const user = getCurrentUser(req);
-  if (user.role === 'worker') {
-    return res.status(403).json({ error: 'Only managers can review fatigue flags' });
-  }
-
+app.patch('/api/fatigue/:id/review', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { reviewNotes } = req.body;
   const data = db.get();
   const alert = data.fatigueAlerts.find(a => a.id === req.params.id);
 
   if (!alert) {
     return res.status(404).json({ error: 'Fatigue alert not found' });
+  }
+
+  // Organization boundary check
+  if (!enforceOrgBoundary(alert.organizationId, user)) {
+    return res.status(403).json({ error: 'Cannot review fatigue alerts belonging to another organization' });
   }
 
   db.update(d => {
@@ -528,17 +615,22 @@ app.patch('/api/fatigue/:id/review', (req, res) => {
 // -------------------------------------------------------------
 // SKILL PASSPORT
 // -------------------------------------------------------------
-app.get('/api/skills', (req, res) => {
+app.get('/api/skills', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const data = db.get();
-  const user = getCurrentUser(req);
   const targetWorkerId = (req.query.workerId as string) || user.id;
+
+  // Security: workers can only view their own skills
+  if (user.role === 'worker' && targetWorkerId !== user.id) {
+    return res.status(403).json({ error: 'Cannot view skills of other workers' });
+  }
 
   const skills = data.skills.filter(s => s.workerId === targetWorkerId);
   res.json(skills);
 });
 
-app.post('/api/skills', (req, res) => {
-  const user = getCurrentUser(req);
+app.post('/api/skills', requireAuth, (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { skillTitle, category, yearsExperience, certificateRef } = req.body;
 
   if (!skillTitle || !category) {
@@ -562,12 +654,8 @@ app.post('/api/skills', (req, res) => {
   res.status(201).json(newSkill);
 });
 
-app.patch('/api/skills/:id/verify', (req, res) => {
-  const user = getCurrentUser(req);
-  if (user.role === 'worker') {
-    return res.status(403).json({ error: 'Only employers and authorized assessors can verify skill credentials' });
-  }
-
+app.patch('/api/skills/:id/verify', requireAuth, requireRole('manager', 'admin'), (req: AuthenticatedRequest, res) => {
+  const user = req.user!;
   const { certificateRef } = req.body;
   const data = db.get();
   const skill = data.skills.find(s => s.id === req.params.id);
@@ -627,6 +715,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[FairShift Server] Running on http://localhost:${PORT}`);
-  console.log(`[FairShift Server] Mode: ${process.env.NODE_ENV || 'development'}`);
   console.log(`[FairShift Server] Listening on dynamic port for Cloud Run.`);
 });

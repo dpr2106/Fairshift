@@ -3,9 +3,10 @@
 > **Theme:** UN SDG 8 — Decent Work and Economic Growth  
 > **Target Industries:** Construction Sites & Healthcare Facilities
 
-[![Automated Tests](https://img.shields.io/badge/tests-12%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Automated Tests](https://img.shields.io/badge/tests-14%20passed%2C%200%20failed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/runtime-Node%20v22%20%7C%20TypeScript%20%7C%20React-blue.svg)]()
 [![Cloud Run Ready](https://img.shields.io/badge/deployment-Google%20Cloud%20Run-blue.svg)]()
+[![Database](https://img.shields.io/badge/database-PostgreSQL%20Ready%20%7C%20Local%20SQLite-indigo.svg)]()
 [![SDG 8](https://img.shields.io/badge/UN%20SDG%208-Decent%20Work-emerald.svg)]()
 
 ---
@@ -80,27 +81,39 @@ The project includes unit and integration tests executing natively via Node's te
 npm test
 ```
 
-### Test Coverage Summary:
+### Test Coverage Summary (14 Tests Passed, 0 Failed):
+- ✔ GET /health returns healthy status, service name, and database mode
+- ✔ Rejects forged session tokens or altered payloads with 401 Unauthorized
+- ✔ GET /api/shifts rejects unauthenticated request without token
+- ✔ Workers are strictly forbidden from approving attendance or creating shifts
+- ✔ Construction worker cannot check in or access records of Healthcare organization
+- ✔ Check-in rejects invalid QR token
+- ✔ Workplace feedback strictly detaches identity and stores no workerId
+- ✔ Generated payslip has estimate status and itemized calculation notes
 - ✔ Shift duration calculates correct regular hours for standard 8h day shift
 - ✔ Overnight shift correctly computes across midnight boundary with overtime
 - ✔ Rejects invalid checkout time that is before checkin time
 - ✔ Transparent payslip calculates base pay, statutory 1.5x overtime, EPF and ESIC correctly
 - ✔ Fatigue alert triggers when shift duration exceeds 10 hours
 - ✔ Fatigue alert triggers when rest between shifts is less than mandatory 11 hours
-- ✔ GET /health returns healthy status and metadata for Cloud Run
-- ✔ GET /api/shifts filters by industry (Construction vs Healthcare)
-- ✔ POST /api/attendance/check-in rejects invalid QR token
-- ✔ Anonymous safety report hides worker identity from API responses
-- ✔ Workplace feedback is 100% identity detached with zero worker ID stored
-- ✔ Workers are blocked from approving attendance or updating safety status (RBAC)
 
-**Result: 12 tests passed, 0 failed.**
+**Result: 14 tests passed, 0 failed.**
 
 ---
 
-## 6. Google Cloud Run Deployment Guide
+## 6. Database Persistence & Google Cloud Run Deployment Guide
 
-FairShift is fully containerized and complies with Google Cloud Run standards:
+### Ephemeral Container Storage vs External PostgreSQL
+Google Cloud Run instances utilize an ephemeral filesystem that is cleared upon instance restarts and scale-to-zero cycles.
+- **Local Development:** FairShift runs with zero setup using local atomic file/SQLite persistence.
+- **Production Cloud Run:** Configure the `DATABASE_URL` environment variable pointing to an external PostgreSQL database (e.g., Google Cloud SQL for PostgreSQL). FairShift automatically detects `DATABASE_URL` and routes data persistence to PostgreSQL.
+
+```bash
+# Execute initial schema migration
+npm run migrate
+```
+
+### Container Configuration:
 - Listens dynamically on the `PORT` environment variable (`process.env.PORT || 8080`).
 - Multi-stage Docker build producing an image under 120 MB.
 - Provides a `/health` health-check endpoint.

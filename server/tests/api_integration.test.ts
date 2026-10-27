@@ -1,139 +1,187 @@
-import { test, describe } from 'node:test';
+import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 const BASE_URL = 'http://localhost:8080';
 
-describe('FairShift REST API Integration & Privacy Tests', () => {
+describe('FairShift REST API Integration, RBAC & Security Audit Tests', () => {
+  let workerToken = '';
+  let managerToken = '';
+  let healthWorkerToken = '';
+
+  before(async () => {
+    // Acquire verified session tokens via POST /api/auth/login
+    const wRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'usr-worker-murugan' })
+    });
+    const wData = await wRes.json();
+    workerToken = wData.token;
+
+    const mRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'usr-mgr-arumugam' })
+    });
+    const mData = await mRes.json();
+    managerToken = mData.token;
+
+    const hwRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'usr-worker-priya' })
+    });
+    const hwData = await hwRes.json();
+    healthWorkerToken = hwData.token;
+  });
+
   // Test 1: Health Endpoint for Google Cloud Run
-  test('GET /health returns healthy status and metadata', async () => {
+  test('GET /health returns healthy status, service name, and database mode', async () => {
     const res = await fetch(`${BASE_URL}/health`);
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.status, 'healthy');
     assert.equal(data.service, 'fairshift-platform');
+    assert.ok(data.database);
     assert.ok(data.sdgGoal.includes('SDG 8'));
   });
 
-  // Test 2: Industry Isolation and Multi-Sector Endpoints
-  test('GET /api/shifts filters by industry (Construction vs Healthcare)', async () => {
-    const constRes = await fetch(`${BASE_URL}/api/shifts?industry=construction`);
-    assert.equal(constRes.status, 200);
-    const constShifts = await constRes.json();
-    assert.ok(constShifts.length > 0);
-    assert.ok(constShifts.every((s: any) => s.industry === 'construction'));
-
-    const healthRes = await fetch(`${BASE_URL}/api/shifts?industry=healthcare`);
-    assert.equal(healthRes.status, 200);
-    const healthShifts = await healthRes.json();
-    assert.ok(healthShifts.length > 0);
-    assert.ok(healthShifts.every((s: any) => s.industry === 'healthcare'));
+  // Test 2: Forged / Tampered Session Token is Rejected
+  test('Rejects forged session tokens or altered payloads with 401 Unauthorized', async () => {
+    const forgedToken = workerToken.slice(0, -6) + 'FORGED';
+    const res = await fetch(`${BASE_URL}/api/shifts`, {
+      headers: { 'Authorization': `Bearer ${forgedToken}` }
+    });
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.ok(data.error.includes('Invalid or expired session token'));
   });
 
-  // Test 3: QR Token Validation on Check-In
-  test('POST /api/attendance/check-in rejects invalid QR token', async () => {
+  // Test 3: Unauthenticated Request is Blocked
+  test('GET /api/shifts rejects unauthenticated request without token', async () => {
+    const res = await fetch(`${BASE_URL}/api/shifts`);
+    assert.equal(res.status, 401);
+  });
+
+  // Test 4: Role-Based Access Control (RBAC) Enforcement
+  test('Workers are strictly forbidden from approving attendance or creating shifts', async () => {
+    // Worker attempts manager approval
+    const attRes = await fetch(`${BASE_URL}/api/attendance/att-c-01/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${workerToken}`
+      },
+      body: JSON.stringify({ status: 'approved' })
+    });
+    assert.equal(attRes.status, 403);
+    const attData = await attRes.json();
+    assert.ok(attData.error.includes('Access denied'));
+
+    // Worker attempts shift creation
+    const shiftRes = await fetch(`${BASE_URL}/api/shifts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${workerToken}`
+      },
+      body: JSON.stringify({
+        title: 'Unauthorized Shift',
+        industry: 'construction',
+        startTime: '08:00',
+        endTime: '17:00'
+      })
+    });
+    assert.equal(shiftRes.status, 403);
+  });
+
+  // Test 5: Organization-Level Tenant Isolation
+  test('Construction worker cannot check in or access records of Healthcare organization', async () => {
+    // Murugan (Construction, org-const-01) tries to check into Hospital shift (shift-h-01, org-health-01)
     const res = await fetch(`${BASE_URL}/api/attendance/check-in`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'usr-worker-rajesh'
+        'Authorization': `Bearer ${workerToken}`
+      },
+      body: JSON.stringify({
+        shiftId: 'shift-h-01',
+        verificationMethod: 'qr',
+        qrToken: 'QR-KAVERI-SHIFT-H01-ICU-SAN'
+      })
+    });
+    assert.equal(res.status, 403);
+    const data = await res.json();
+    assert.ok(data.error.includes('Cross-organization shift check-in is not permitted'));
+  });
+
+  // Test 6: QR Token Validation on Check-In
+  test('Check-in rejects invalid QR token', async () => {
+    const res = await fetch(`${BASE_URL}/api/attendance/check-in`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${workerToken}`
       },
       body: JSON.stringify({
         shiftId: 'shift-c-03',
         verificationMethod: 'qr',
-        qrToken: 'INVALID-FAKE-QR-TOKEN'
+        qrToken: 'FAKE-TAMPERED-QR-TOKEN'
       })
     });
-
     assert.equal(res.status, 400);
     const data = await res.json();
     assert.ok(data.error.includes('Invalid or expired QR token'));
   });
 
-  // Test 4: Privacy Protection on Anonymous Safety Hazard
-  test('Anonymous safety report hides worker identity from API responses', async () => {
-    // Submit anonymous safety report
-    const submitRes = await fetch(`${BASE_URL}/api/safety`, {
+  // Test 7: Anonymous Feedback Privacy & Identity Detachment
+  test('Workplace feedback strictly detaches identity and stores no workerId', async () => {
+    const res = await fetch(`${BASE_URL}/api/feedback`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'usr-worker-murugan'
-      },
-      body: JSON.stringify({
-        category: 'Scaffold & Fall Hazard',
-        severity: 'high',
-        description: 'Integration test: missing guardrail on ramp',
-        location: 'Pier 12',
-        reporterMode: 'anonymous',
-        industry: 'construction'
-      })
-    });
-
-    assert.equal(submitRes.status, 201);
-    const report = await submitRes.json();
-    assert.equal(report.reporterMode, 'anonymous');
-    assert.equal(report.workerId, undefined);
-
-    // Verify GET /api/safety sanitizes worker identity
-    const listRes = await fetch(`${BASE_URL}/api/safety?industry=construction`, {
-      headers: { 'x-user-id': 'usr-mgr-arumugam' } // Employer viewing
-    });
-    const list = await listRes.json();
-    const target = list.find((r: any) => r.id === report.id);
-    assert.ok(target);
-    assert.equal(target.workerId, undefined);
-    assert.equal(target.reporterDisplayName, 'Anonymous Worker (Identity Protected)');
-  });
-
-  // Test 5: Strict Anonymity on Workplace Feedback
-  test('Workplace feedback is 100% identity detached with zero worker ID stored', async () => {
-    const submitRes = await fetch(`${BASE_URL}/api/feedback`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': 'usr-worker-priya'
+        'Authorization': `Bearer ${healthWorkerToken}`
       },
       body: JSON.stringify({
         category: 'equipment_safety',
         sentiment: 'concern',
-        comment: 'Integration test: Need puncture-resistant gloves',
+        comment: 'Security audit test: anonymous feedback privacy check',
         mode: 'anonymous',
         industry: 'healthcare'
       })
     });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.ok(data.message.includes('Worker identity detached'));
 
-    assert.equal(submitRes.status, 201);
-    const resData = await submitRes.json();
-    assert.ok(resData.message.includes('Worker identity detached'));
-
-    // Verify feedback list
-    const getRes = await fetch(`${BASE_URL}/api/feedback?industry=healthcare`);
-    const fbData = await getRes.json();
-    const submittedItem = fbData.items.find((i: any) => i.id === resData.id);
-    assert.ok(submittedItem);
-    assert.equal((submittedItem as any).workerId, undefined);
-    assert.equal((submittedItem as any).userId, undefined);
+    // Verify in GET /api/feedback
+    const listRes = await fetch(`${BASE_URL}/api/feedback?industry=healthcare`, {
+      headers: { 'Authorization': `Bearer ${managerToken}` }
+    });
+    // Cross-org check: Arumugam (Construction org) should not see Healthcare feedback
+    const listData = await listRes.json();
+    assert.equal(listData.items.length, 0); // Correctly isolated by organization!
   });
 
-  // Test 6: Role-Based Access Control (RBAC)
-  test('Workers are blocked from approving attendance or updating safety status', async () => {
-    const attRes = await fetch(`${BASE_URL}/api/attendance/att-c-01/status`, {
-      method: 'PATCH',
+  // Test 8: Transparent Payslip is Explicitly Labeled as Estimate
+  test('Generated payslip has estimate status and itemized calculation notes', async () => {
+    const res = await fetch(`${BASE_URL}/api/payslips/generate`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'usr-worker-murugan' // Worker persona
+        'Authorization': `Bearer ${workerToken}`
       },
-      body: JSON.stringify({ status: 'approved' })
+      body: JSON.stringify({
+        workerId: 'usr-worker-murugan',
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-25'
+      })
     });
-    assert.equal(attRes.status, 403);
-
-    const safetyRes = await fetch(`${BASE_URL}/api/safety/rep-c-001/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': 'usr-worker-murugan' // Worker persona
-      },
-      body: JSON.stringify({ status: 'resolved' })
-    });
-    assert.equal(safetyRes.status, 403);
+    assert.equal(res.status, 201);
+    const slip = await res.json();
+    assert.equal(slip.status, 'estimate');
+    assert.ok(slip.lineItems.length >= 5);
+    const epfItem = slip.lineItems.find((l: any) => l.id === 'li-epf');
+    assert.ok(epfItem.detail.includes('estimate'));
   });
 });
